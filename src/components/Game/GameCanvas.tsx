@@ -9,6 +9,8 @@ import {
 import type { Entity, Block, Monster } from '../../types';
 import confetti from 'canvas-confetti';
 import { MobileControls } from '../UI/MobileControls';
+import { Pause } from 'lucide-react';
+
 
 export const GameCanvas: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -74,9 +76,9 @@ export const GameCanvas: React.FC = () => {
         }
 
         const mFaces = [
-            '/monster/monster_face_1.jpg',
-            '/monster/monster_face_2.jpg',
-            '/monster/monster_face_3.jpg'
+            '/monster/monster_face_1.png',
+            '/monster/monster_face_2.png',
+            '/monster/monster_face_3.png'
         ];
         mFaces.forEach((src, idx) => {
             const img = new Image();
@@ -762,6 +764,48 @@ export const GameCanvas: React.FC = () => {
     return (
         <div className="game-container">
             <canvas ref={canvasRef} width={1000} height={600} className="rounded-xl shadow-2xl border-4 border-white/20 bg-sky-200" />
+
+            {/* Top-Left Status Bar (HUD) */}
+            <div className="hud-container">
+                <button
+                    onClick={() => togglePaused()}
+                    className="pause-btn"
+                    title="Pause Game (Esc)"
+                >
+                    <Pause size={20} fill="white" />
+                </button>
+
+                <div className="hud-card">
+                    <div className="hud-item">
+                        <span className="hud-label">World</span>
+                        <span className="hud-value">1-{stage}</span>
+                    </div>
+
+                    <div className="hud-divider" />
+
+                    <div className="hud-item">
+                        <span className="hud-label">Score</span>
+                        <span className="hud-value" style={{ color: 'var(--accent)' }}>
+                            {String(score).padStart(7, '0')}
+                        </span>
+                    </div>
+
+                    <div className="hud-divider" />
+
+                    <div className="hud-item">
+                        <span className="hud-label">Life</span>
+                        <div className="health-bar-container">
+                            {[...Array(Math.max(3, hp))].map((_, i) => (
+                                <div
+                                    key={i}
+                                    className={`health-segment ${i < hp ? 'active' : ''}`}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <MobileControls setKey={setKey} />
 
             {isPaused && (
