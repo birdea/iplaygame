@@ -16,7 +16,7 @@ export const GameCanvas: React.FC = () => {
     const {
         stage, hp, score, powerups,
         setHP, addScore, setScreen, activatePowerup,
-        faces, selectedFaceIndex, isPaused, togglePaused
+        faces, selectedFaceIndex
     } = useGameStore();
 
     // Stable refs for actions to avoid re-triggering effects
@@ -26,14 +26,6 @@ export const GameCanvas: React.FC = () => {
     }, [setHP, addScore, setScreen, activatePowerup]);
 
     // Game state refs (mutable for performance)
-    const statsRef = useRef({ hp, score, powerups, isPaused });
-    useEffect(() => {
-        statsRef.current = { hp, score, powerups, isPaused };
-    }, [hp, score, powerups, isPaused]);
-
-    const lastShootTime = useRef(0);
-    const lastEscTime = useRef(0);
-
     const playerRef = useRef<Entity>({
         id: 'player',
         pos: { x: 100, y: 300 },
@@ -64,37 +56,20 @@ export const GameCanvas: React.FC = () => {
 
     const faceImage = useRef<HTMLImageElement | null>(null);
 
-    const monsterFaces = useRef<(HTMLImageElement | null)[]>([null, null, null]);
-
     useEffect(() => {
         if (faces[selectedFaceIndex]) {
             const img = new Image();
             img.src = faces[selectedFaceIndex];
             img.onload = () => { faceImage.current = img; };
         }
-
-        const mFaces = [
-            '/monster/monster_face_1.jpg',
-            '/monster/monster_face_2.jpg',
-            '/monster/monster_face_3.jpg'
-        ];
-        mFaces.forEach((src, idx) => {
-            const img = new Image();
-            img.src = src;
-            img.onload = () => { monsterFaces.current[idx] = img; };
-        });
     }, [faces, selectedFaceIndex]);
 
     const MINIMAP_WIDTH = 150;
     const MINIMAP_HEIGHT = 90;
 
-    const nextId = useRef(0);
-    const getUniqueId = (prefix: string) => `${prefix}-${nextId.current++}`;
-
     // Generate Stage
     useEffect(() => {
         const newEntities: Entity[] = [];
-        nextId.current = 0;
 
         // Floor with Holes
         let x = 0;
@@ -107,7 +82,7 @@ export const GameCanvas: React.FC = () => {
             }
 
             newEntities.push({
-                id: getUniqueId('ground'),
+                id: `ground-${x}`,
                 pos: { x, y: 500 },
                 vel: { x: 0, y: 0 },
                 width: UNIT_SIZE,
@@ -119,14 +94,15 @@ export const GameCanvas: React.FC = () => {
         }
 
         // Difficulty scaling
-        const monsterChance = (0.15 + (stageRef.current - 1) * 0.1) * 2;
+        const monsterChance = 0.15 + (stageRef.current - 1) * 0.1;
         const monsterSpeed = 2 + (stageRef.current - 1) * 1.5;
 
-        // Monsters and Bricks
+        // Monsters and Bricks (Ensure they don't float over holes if we want realism, 
+        // but for now random is fine)
         for (let bx = 500; bx < BOSS_TRIGGER_X - 500; bx += UNIT_SIZE * 2) {
             if (Math.random() > 0.7) {
                 newEntities.push({
-                    id: getUniqueId('brick'),
+                    id: `brick-${bx}`,
                     pos: { x: bx, y: 300 },
                     vel: { x: 0, y: 0 },
                     width: UNIT_SIZE,
@@ -137,40 +113,14 @@ export const GameCanvas: React.FC = () => {
             }
 
             if (Math.random() < monsterChance) {
-                const rand = Math.random();
-                let mType: 'skinny' | 'fat' | 'fly' = 'skinny';
-                let mWidth = UNIT_SIZE;
-                let mHeight = UNIT_SIZE;
-                let mVelX = -monsterSpeed;
-                let mPosY = 450;
-
-                if (rand < 0.33) {
-                    mType = 'skinny';
-                    mWidth = UNIT_SIZE * 0.7;
-                    mHeight = UNIT_SIZE * 0.9;
-                    mVelX = -monsterSpeed * 1.8;
-                } else if (rand < 0.66) {
-                    mType = 'fat';
-                    mWidth = UNIT_SIZE * 1.5;
-                    mHeight = UNIT_SIZE * 1.2;
-                    mVelX = -monsterSpeed * 0.7;
-                    mPosY = 500 - mHeight;
-                } else {
-                    mType = 'fly';
-                    mWidth = UNIT_SIZE;
-                    mHeight = UNIT_SIZE * 0.8;
-                    mVelX = -monsterSpeed * 1.2;
-                    mPosY = 200 + Math.random() * 150;
-                }
-
                 newEntities.push({
-                    id: getUniqueId('monster'),
-                    pos: { x: bx, y: mPosY },
-                    vel: { x: mVelX, y: 0 },
-                    width: mWidth,
-                    height: mHeight,
+                    id: `monster-${bx}`,
+                    pos: { x: bx, y: 450 },
+                    vel: { x: -monsterSpeed, y: 0 },
+                    width: UNIT_SIZE,
+                    height: UNIT_SIZE,
                     type: 'monster',
-                    monsterType: mType,
+                    monsterType: 'ground',
                     direction: -1
                 } as Monster);
             }
@@ -286,7 +236,7 @@ export const GameCanvas: React.FC = () => {
         ctx.translate(pos.x, pos.y);
 
         // Body Color (Active Powerup check)
-        const isBigBullet = statsRef.current.powerups.bigBullet > Date.now();
+        const isBigBullet = powerups.bigBullet > Date.now();
         const bodyColor = isBigBullet ? '#F44336' : '#D32F2F';
 
         // 2. Draw Legs
@@ -344,192 +294,259 @@ export const GameCanvas: React.FC = () => {
         }
 
         ctx.restore();
-    }, []);
+    }, [powerups.bigBullet]);
 
-    // Game Loop - Ref-based for perfect stability (no restarts)
-    const loopRef = useRef<(time: number) => void>(null);
+    // Game Loop
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
 
-    loopRef.current = (time: number) => {
-        try {
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return;
+        let frameId: number;
+        let lastShootTime = 0;
 
-            // -- 0. INPUTS & PAUSE --
-            if (keys.current['Escape'] && time - lastEscTime.current > 300) {
-                togglePaused();
-                lastEscTime.current = time;
-            }
+        const shoot = () => {
+            const isBig = powerups.bigBullet > Date.now();
+            bullets.current.push({
+                id: `bullet-${Date.now()}`,
+                pos: { x: playerRef.current.pos.x + playerRef.current.width, y: playerRef.current.pos.y + 20 },
+                vel: { x: BULLET_SPEED * (isBig ? 1.2 : 1), y: 0 },
+                width: isBig ? 30 : 12,
+                height: isBig ? 30 : 12,
+                type: 'bullet',
+                damage: isBig ? 2 : 1
+            });
+        };
 
+        const spawnBoss = () => {
+            if (bossActive.current) return;
+            bossActive.current = true;
+            entities.current.push({
+                id: 'boss',
+                pos: { x: BOSS_TRIGGER_X + 600, y: 100 },
+                vel: { x: -2, y: 0 },
+                width: BOSS_SIZE,
+                height: BOSS_SIZE,
+                type: 'boss',
+                hp: 50 * stageRef.current,
+                maxHP: 50 * stageRef.current,
+            } as Entity);
+        };
+
+        const loop = (time: number) => {
             if (!gameActive.current) return;
 
-            const isPausedLoop = statsRef.current.isPaused;
+            // -- 0. AUTO SCROLL --
+            cameraX.current += AUTO_SCROLL_SPEED;
 
-            if (!isPausedLoop) {
-                // -- 1. LOGIC UPDATES --
-                cameraX.current += AUTO_SCROLL_SPEED;
-                const speedMult = statsRef.current.powerups.fastRun > Date.now() ? 1.6 : 1;
+            // Powerup checks
+            const speedMult = powerups.fastRun > Date.now() ? 1.6 : 1;
 
-                const p = playerRef.current;
+            // -- 1. INPUT --
+            let isMoving = false;
+            const p = playerRef.current;
+            // Left/Right
+            if (keys.current['ArrowLeft'] || keys.current['KeyA']) {
+                p.vel.x = -MOVE_SPEED * speedMult;
+                isMoving = true;
+            } else if (keys.current['ArrowRight'] || keys.current['KeyD']) {
+                p.vel.x = MOVE_SPEED * speedMult;
+                isMoving = true;
+            } else {
                 p.vel.x = 0;
-                if (keys.current['ArrowLeft'] || keys.current['KeyA']) p.vel.x = -MOVE_SPEED * speedMult;
-                if (keys.current['ArrowRight'] || keys.current['KeyD']) p.vel.x = MOVE_SPEED * speedMult;
-
-                if ((keys.current['ArrowUp'] || keys.current['KeyW'] || keys.current['Space']) && onGround.current) {
-                    p.vel.y = JUMP_FORCE;
-                    onGround.current = false;
-                }
-
-                // Shoot
-                if (keys.current['KeyS'] && time - lastShootTime.current > 300) {
-                    const isBig = statsRef.current.powerups.bigBullet > Date.now();
-                    bullets.current.push({
-                        id: `bullet-${Date.now()}-${Math.random()}`,
-                        pos: { x: p.pos.x + p.width, y: p.pos.y + 20 },
-                        vel: { x: BULLET_SPEED * (isBig ? 1.2 : 1), y: 0 },
-                        width: isBig ? 30 : 12, height: isBig ? 30 : 12,
-                        type: 'bullet', damage: isBig ? 2 : 1
-                    });
-                    lastShootTime.current = time;
-                }
-
-                // Vertical Move
-                p.vel.y += GRAVITY;
-                p.pos.y += p.vel.y;
-
-                // Vertical Collisions
-                onGround.current = false;
-                entities.current.forEach(e => {
-                    if (e.type === 'block') {
-                        if (p.pos.x < e.pos.x + e.width && p.pos.x + p.width > e.pos.x &&
-                            p.pos.y < e.pos.y + e.height && p.pos.y + p.height > e.pos.y) {
-                            if (p.vel.y > 0 && p.pos.y + p.height - p.vel.y <= e.pos.y + 10) {
-                                p.pos.y = e.pos.y - p.height; p.vel.y = 0; onGround.current = true;
-                            } else if (p.vel.y < 0 && p.pos.y - p.vel.y >= e.pos.y + e.height - 10) {
-                                p.pos.y = e.pos.y + e.height; p.vel.y = 0;
-                                if ((e as Block).blockType === 'question') {
-                                    (e as Block).blockType = 'brick';
-                                    const rand = Math.random();
-                                    if (rand < 0.25) actionsRef.current.activatePowerup('bigBullet', 30000);
-                                    else if (rand < 0.5) actionsRef.current.activatePowerup('fastRun', 30000);
-                                    else if (rand < 0.75) actionsRef.current.setHP(statsRef.current.hp + 1);
-                                    actionsRef.current.addScore(100);
-                                }
-                            }
-                        }
-                    }
-                });
-
-                // Horizontal Move
-                p.pos.x += p.vel.x;
-                entities.current.forEach(e => {
-                    if (e.type === 'block' && p.pos.x < e.pos.x + e.width && p.pos.x + p.width > e.pos.x &&
-                        p.pos.y < e.pos.y + e.height && p.pos.y + p.height > e.pos.y) {
-                        if (p.vel.x > 0) p.pos.x = e.pos.x - p.width;
-                        else if (p.vel.x < 0) p.pos.x = e.pos.x + e.width;
-                    }
-                });
-
-                // Fall Death
-                if (p.pos.y > 600) {
-                    actionsRef.current.setHP(statsRef.current.hp - 1);
-                    const groundBlocks = entities.current.filter(e => e.type === 'block' && (e as Block).blockType === 'ground');
-                    const nextSafe = groundBlocks.find(e => e.pos.x > cameraX.current + 100) || groundBlocks[0];
-                    p.pos = nextSafe ? { x: nextSafe.pos.x, y: nextSafe.pos.y - 100 } : { x: cameraX.current + 100, y: 300 };
-                    p.vel = { x: 0, y: 0 };
-                }
-
-                if (p.pos.x < cameraX.current) p.pos.x = cameraX.current;
-                if (p.pos.x > BOSS_TRIGGER_X && !bossActive.current) {
-                    bossActive.current = true;
-                    entities.current.push({
-                        id: 'boss', pos: { x: BOSS_TRIGGER_X + 600, y: 100 },
-                        vel: { x: -2, y: 0 }, width: BOSS_SIZE, height: BOSS_SIZE,
-                        type: 'boss', hp: 50 * stageRef.current, maxHP: 50 * stageRef.current,
-                    } as Entity);
-                }
-
-                // Monster & Boss Logic
-                entities.current.forEach(e => {
-                    if (e.type === 'monster') {
-                        e.pos.x += e.vel.x;
-                        if (p.pos.x < e.pos.x + e.width && p.pos.x + p.width > e.pos.x &&
-                            p.pos.y < e.pos.y + e.height && p.pos.y + p.height > e.pos.y) {
-                            if (p.vel.y > 0 && p.pos.y + p.height - p.vel.y <= e.pos.y + 10) {
-                                entities.current = entities.current.filter(ent => ent.id !== e.id);
-                                p.vel.y = -10; actionsRef.current.addScore(200);
-                            } else {
-                                actionsRef.current.setHP(statsRef.current.hp - 1); p.pos.x -= 100;
-                            }
-                        }
-                    } else if (e.type === 'boss') {
-                        e.vel.y += GRAVITY * 0.4; e.pos.y += e.vel.y;
-                        if (e.pos.y + e.height > 500) { e.pos.y = 500 - e.height; e.vel.y = 0; if (Math.random() < 0.02) e.vel.y = -12; }
-                        const dist = e.pos.x - p.pos.x;
-                        if (dist > 300) e.pos.x -= 2; else if (dist < 100) e.pos.x += 2;
-                        const cooldown = 3500 / stageRef.current;
-                        if (time - bossTactics.current.lastAttackTime > cooldown) {
-                            bossTactics.current.state = 'fire'; bossTactics.current.lastAttackTime = time; bossTactics.current.attackDuration = 1000;
-                            for (let i = 0; i < 3; i++) {
-                                setTimeout(() => {
-                                    if (!gameActive.current) return;
-                                    bullets.current.push({
-                                        id: `boss-fire-${Date.now()}-${i}`,
-                                        pos: { x: e.pos.x, y: e.pos.y + e.height * 0.4 + i * 20 },
-                                        vel: { x: -6 - Math.random() * 2, y: (Math.random() - 0.5) * 2 },
-                                        width: 30, height: 30, type: 'boss-bullet'
-                                    });
-                                }, i * 300);
-                            }
-                        }
-                        if (bossTactics.current.attackDuration > 0) {
-                            bossTactics.current.attackDuration -= 16;
-                            if (bossTactics.current.attackDuration <= 0) bossTactics.current.state = 'idle';
-                        }
-                        if (p.pos.x < e.pos.x + e.width && p.pos.x + p.width > e.pos.x &&
-                            p.pos.y < e.pos.y + e.height && p.pos.y + p.height > e.pos.y) {
-                            actionsRef.current.setHP(statsRef.current.hp - 1); p.pos.x -= 200;
-                        }
-                    }
-                });
-
-                // Bullets Logic
-                bullets.current.forEach(b => {
-                    b.pos.x += b.vel.x; b.pos.y += b.vel.y;
-                    if (b.type === 'bullet') {
-                        const boss = entities.current.find(ent => ent.type === 'boss');
-                        if (boss && b.pos.x < boss.pos.x + boss.width && b.pos.x + b.width > boss.pos.x &&
-                            b.pos.y < boss.pos.y + boss.height && b.pos.y + b.height > boss.pos.y) {
-                            boss.hp = (boss.hp || 0) - (b.damage || 1); bullets.current = bullets.current.filter(bul => bul.id !== b.id);
-                            if (boss.hp <= 0) {
-                                entities.current = entities.current.filter(ent => ent.id !== boss.id);
-                                actionsRef.current.addScore(5000); confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-                                gameActive.current = false; actionsRef.current.setScreen('victory');
-                            }
-                        }
-                        entities.current.forEach(ent => {
-                            if (ent.type === 'monster' && b.pos.x < ent.pos.x + ent.width && b.pos.x + b.width > ent.pos.x &&
-                                b.pos.y < ent.pos.y + ent.height && b.pos.y + b.height > ent.pos.y) {
-                                entities.current = entities.current.filter(e => e.id !== ent.id);
-                                bullets.current = bullets.current.filter(bul => bul.id !== b.id);
-                                actionsRef.current.addScore(200);
-                            }
-                        });
-                    } else if (b.type === 'boss-bullet') {
-                        if (b.pos.x < p.pos.x + p.width && b.pos.x + b.width > p.pos.x &&
-                            b.pos.y < p.pos.y + p.height && b.pos.y + b.height > p.pos.y) {
-                            actionsRef.current.setHP(statsRef.current.hp - 1);
-                            bullets.current = bullets.current.filter(bul => bul.id !== b.id);
-                            p.pos.x -= 50;
-                        }
-                    }
-                });
-                bullets.current = bullets.current.filter(bul => bul.pos.x > cameraX.current - 100 && bul.pos.x < cameraX.current + 1200);
-                cameraX.current = Math.max(cameraX.current, p.pos.x - 400);
             }
 
-            // -- 2. RENDER --
+            // Jump: Up, W, or Space (Virtual A)
+            if ((keys.current['ArrowUp'] || keys.current['KeyW'] || keys.current['Space']) && onGround.current) {
+                p.vel.y = JUMP_FORCE;
+                onGround.current = false;
+            }
+
+            // S for Shoot
+            if (keys.current['KeyS'] && time - lastShootTime > 300) {
+                shoot();
+                lastShootTime = time;
+            }
+
+            // -- 2. PHYSICS & COLLISION --
+            p.vel.y += GRAVITY;
+            p.pos.x += p.vel.x;
+            p.pos.y += p.vel.y;
+
+            // Fall Detection
+            if (p.pos.y > 600) {
+                actionsRef.current.setHP(hp - 1);
+                // Respawn back a little on safe height
+                p.pos.y = 200;
+                p.pos.x = Math.max(cameraX.current + 50, p.pos.x - 150);
+                p.vel.y = 0;
+                p.vel.x = 0;
+            }
+
+            // SCREEN BOUNDARY: CANNOT GO LEFT OF CAMERA
+            if (p.pos.x < cameraX.current) {
+                p.pos.x = cameraX.current;
+            }
+
+            if (p.pos.x > BOSS_TRIGGER_X && !bossActive.current) {
+                spawnBoss();
+            }
+
+            onGround.current = false;
+
+            entities.current.forEach(e => {
+                if (e.type === 'block') {
+                    if (p.pos.x < e.pos.x + e.width &&
+                        p.pos.x + p.width > e.pos.x &&
+                        p.pos.y < e.pos.y + e.height &&
+                        p.pos.y + p.height > e.pos.y) {
+
+                        if (p.vel.y > 0 && p.pos.y + p.height - p.vel.y <= e.pos.y) {
+                            p.pos.y = e.pos.y - p.height;
+                            p.vel.y = 0;
+                            onGround.current = true;
+                        }
+                        else if (p.vel.y < 0 && p.pos.y - p.vel.y >= e.pos.y + e.height) {
+                            p.pos.y = e.pos.y + e.height;
+                            p.vel.y = 0;
+                            if (e.type === 'block' && (e as Block).blockType === 'question') {
+                                (e as Block).blockType = 'brick';
+                                // Random Item Logic
+                                const rand = Math.random();
+                                if (rand < 0.25) actionsRef.current.activatePowerup('bigBullet', 30000);
+                                else if (rand < 0.5) actionsRef.current.activatePowerup('fastRun', 30000);
+                                else if (rand < 0.75) actionsRef.current.setHP(hp + 1);
+                                actionsRef.current.addScore(100);
+                            }
+                        }
+                    }
+                }
+
+                if (e.type === 'monster') {
+                    e.pos.x += e.vel.x;
+                    if (e.pos.x < cameraX.current - 100 || e.pos.x > STAGE_LENGTH) {
+                        // Cleanup or Respawn if needed, but for now just let it go
+                    }
+
+                    if (p.pos.x < e.pos.x + e.width &&
+                        p.pos.x + p.width > e.pos.x &&
+                        p.pos.y < e.pos.y + e.height &&
+                        p.pos.y + p.height > e.pos.y) {
+
+                        if (p.vel.y > 0 && p.pos.y + p.height - p.vel.y <= e.pos.y + 10) {
+                            entities.current = entities.current.filter(ent => ent.id !== e.id);
+                            p.vel.y = -10;
+                            actionsRef.current.addScore(200);
+                        } else {
+                            actionsRef.current.setHP(hp - 1);
+                            p.pos.x -= 100;
+                        }
+                    }
+                }
+
+                if (e.type === 'boss') {
+                    // Boss Gravity and Ground
+                    e.vel.y += GRAVITY * 0.4; // Low gravity for high jump
+                    e.pos.y += e.vel.y;
+                    if (e.pos.y + e.height > 500) {
+                        e.pos.y = 500 - e.height;
+                        e.vel.y = 0;
+                        if (Math.random() < 0.02) e.vel.y = -12; // Occasional big jump
+                    }
+
+                    const distToPlayer = e.pos.x - p.pos.x;
+                    // Keep some space but approach
+                    if (distToPlayer > 300) e.pos.x -= 2;
+                    else if (distToPlayer < 100) e.pos.x += 2;
+
+                    // Attack: Multi-fire
+                    const cooldown = 3500 / stageRef.current;
+                    if (time - bossTactics.current.lastAttackTime > cooldown) {
+                        bossTactics.current.state = 'fire';
+                        bossTactics.current.lastAttackTime = time;
+                        bossTactics.current.attackDuration = 1000;
+
+                        // Burst 3 bullets
+                        for (let i = 0; i < 3; i++) {
+                            setTimeout(() => {
+                                if (!gameActive.current) return;
+                                bullets.current.push({
+                                    id: `boss-fire-${Date.now()}-${i}`,
+                                    pos: { x: e.pos.x, y: e.pos.y + e.height * 0.4 + i * 20 },
+                                    vel: { x: -6 - Math.random() * 2, y: (Math.random() - 0.5) * 2 },
+                                    width: 30,
+                                    height: 30,
+                                    type: 'boss-bullet'
+                                });
+                            }, i * 300);
+                        }
+                    }
+
+                    if (bossTactics.current.attackDuration > 0) {
+                        bossTactics.current.attackDuration -= 16;
+                        if (bossTactics.current.attackDuration <= 0) bossTactics.current.state = 'idle';
+                    }
+
+                    if (p.pos.x < e.pos.x + e.width &&
+                        p.pos.x + p.width > e.pos.x &&
+                        p.pos.y < e.pos.y + e.height &&
+                        p.pos.y + p.height > e.pos.y) {
+                        actionsRef.current.setHP(hp - 1);
+                        p.pos.x -= 200;
+                    }
+                }
+            });
+
+            // Bullet collisions
+            bullets.current.forEach(b => {
+                b.pos.x += b.vel.x;
+                b.pos.y += b.vel.y;
+                if (b.type === 'bullet') {
+                    const boss = entities.current.find(ent => ent.type === 'boss');
+                    if (boss && b.pos.x < boss.pos.x + boss.width &&
+                        b.pos.x + b.width > boss.pos.x &&
+                        b.pos.y < boss.pos.y + boss.height &&
+                        b.pos.y + b.height > boss.pos.y) {
+
+                        boss.hp = (boss.hp || 0) - (b.damage || 1);
+                        bullets.current = bullets.current.filter(bul => bul.id !== b.id);
+                        if (boss.hp <= 0) {
+                            entities.current = entities.current.filter(ent => ent.id !== boss.id);
+                            actionsRef.current.addScore(5000);
+                            confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                            gameActive.current = false;
+                            actionsRef.current.setScreen('victory');
+                        }
+                    }
+                    entities.current.forEach(ent => {
+                        if (ent.type === 'monster' && b.pos.x < ent.pos.x + ent.width &&
+                            b.pos.x + b.width > ent.pos.x &&
+                            b.pos.y < ent.pos.y + ent.height &&
+                            b.pos.y + b.height > ent.pos.y) {
+                            entities.current = entities.current.filter(e => e.id !== ent.id);
+                            bullets.current = bullets.current.filter(bul => bul.id !== b.id);
+                            actionsRef.current.addScore(200);
+                        }
+                    });
+                } else if (b.type === 'boss-bullet') {
+                    if (b.pos.x < p.pos.x + p.width &&
+                        b.pos.x + b.width > p.pos.x &&
+                        b.pos.y < p.pos.y + p.height &&
+                        b.pos.y + b.height > p.pos.y) { // Corrected collision check
+                        actionsRef.current.setHP(hp - 1);
+                        bullets.current = bullets.current.filter(bul => bul.id !== b.id);
+                        p.pos.x -= 50;
+                    }
+                }
+            });
+            bullets.current = bullets.current.filter(b => b.pos.x > cameraX.current - 100 && b.pos.x < cameraX.current + 1200);
+
+            // AUTO-CAM is already incremented, so we just make sure it stays at least at player - offset
+            // But user said "slowly move", so we don't necessarily snap to player unless player moves far right
+            cameraX.current = Math.max(cameraX.current, p.pos.x - 400);
+
+            // -- 3. RENDER --
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.save();
             ctx.translate(-cameraX.current, 0);
@@ -540,129 +557,113 @@ export const GameCanvas: React.FC = () => {
                     ctx.fillStyle = blk.blockType === 'ground' ? '#5D4037' : (blk.blockType === 'question' ? '#FFD600' : '#8D6E63');
                     ctx.fillRect(e.pos.x, e.pos.y, e.width, e.height);
                     if (blk.blockType === 'question') {
-                        ctx.fillStyle = 'white'; ctx.font = '24px Arial'; ctx.fillText('?', e.pos.x + 18, e.pos.y + 35);
+                        ctx.fillStyle = 'white';
+                        ctx.font = '24px Arial';
+                        ctx.fillText('?', e.pos.x + 18, e.pos.y + 35);
                     }
                 } else if (e.type === 'monster') {
-                    const m = e as Monster;
-                    const mFace = monsterFaces.current[m.monsterType === 'skinny' ? 0 : m.monsterType === 'fat' ? 1 : 2];
-                    ctx.save(); ctx.translate(e.pos.x, e.pos.y);
-                    const walkCycle = Math.sin(time / 150);
-                    const limbWidth = m.monsterType === 'skinny' ? 4 : (m.monsterType === 'fat' ? 12 : 6);
-                    ctx.strokeStyle = '#333'; ctx.lineWidth = limbWidth; ctx.lineCap = 'round';
-                    if (m.monsterType === 'fly') {
-                        ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.6;
-                        const wingOsc = Math.sin(time / 50) * 20;
-                        ctx.beginPath(); ctx.ellipse(-10, 20, 20, Math.max(0.1, 10 + wingOsc), Math.PI / 4, 0, Math.PI * 2); ctx.fill();
-                        ctx.beginPath(); ctx.ellipse(e.width + 10, 20, 20, Math.max(0.1, 10 + wingOsc), -Math.PI / 4, 0, Math.PI * 2); ctx.fill();
-                        ctx.globalAlpha = 1.0;
-                        ctx.beginPath(); ctx.moveTo(e.width * 0.3, e.height); ctx.lineTo(e.width * 0.3, e.height + 10); ctx.stroke();
-                        ctx.beginPath(); ctx.moveTo(e.width * 0.7, e.height); ctx.lineTo(e.width * 0.7, e.height + 10); ctx.stroke();
-                    } else {
-                        ctx.save(); ctx.translate(e.width * 0.3, e.height); ctx.rotate(walkCycle * 0.5); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 15); ctx.stroke(); ctx.restore();
-                        ctx.save(); ctx.translate(e.width * 0.7, e.height); ctx.rotate(-walkCycle * 0.5); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 15); ctx.stroke(); ctx.restore();
-                        ctx.save(); ctx.translate(0, e.height * 0.4); ctx.rotate(-walkCycle * 0.5); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-15, 10); ctx.stroke(); ctx.restore();
-                        ctx.save(); ctx.translate(e.width, e.height * 0.4); ctx.rotate(walkCycle * 0.5); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(15, 10); ctx.stroke(); ctx.restore();
-                    }
-                    ctx.fillStyle = m.monsterType === 'skinny' ? '#FF5252' : (m.monsterType === 'fat' ? '#D32F2F' : '#7E57C2');
-                    ctx.fillRect(0, 0, e.width, e.height);
-                    if (mFace) ctx.drawImage(mFace, 2, 2, e.width - 4, e.height - 4);
-                    ctx.restore();
+                    ctx.fillStyle = '#E53935';
+                    ctx.fillRect(e.pos.x, e.pos.y, e.width, e.height);
                 } else if (e.type === 'boss') {
                     drawDragon(ctx, e.pos.x, e.pos.y, e.width, e.height, time, bossTactics.current.state);
-                    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(e.pos.x, e.pos.y - 40, e.width, 10);
-                    const hpWidth = Math.max(0, (e.hp! / (e.maxHP || 100)) * e.width);
-                    ctx.fillStyle = '#4CAF50'; ctx.fillRect(e.pos.x, e.pos.y - 40, hpWidth, 10);
+
+                    // HP Bar
+                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                    ctx.fillRect(e.pos.x, e.pos.y - 40, e.width, 10);
+                    ctx.fillStyle = '#4CAF50';
+                    ctx.fillRect(e.pos.x, e.pos.y - 40, (e.hp! / (e.maxHP || 100)) * e.width, 10);
                 }
             });
 
             bullets.current.forEach(b => {
                 ctx.fillStyle = b.type === 'boss-bullet' ? '#FFD700' : 'white';
-                ctx.beginPath(); ctx.arc(b.pos.x + b.width / 2, b.pos.y + b.height / 2, b.width / 2, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath();
+                ctx.arc(b.pos.x + b.width / 2, b.pos.y + b.height / 2, b.width / 2, 0, Math.PI * 2);
+                ctx.fill();
+                // Flame trail for boss fire
                 if (b.type === 'boss-bullet') {
                     ctx.fillStyle = 'rgba(255, 69, 0, 0.4)';
-                    ctx.beginPath(); ctx.arc(b.pos.x + b.width + 5, b.pos.y + b.height / 2, b.width / 3, 0, Math.PI * 2); ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(b.pos.x + b.width + 5, b.pos.y + b.height / 2, b.width / 3, 0, Math.PI * 2);
+                    ctx.fill();
                 }
             });
 
-            const p = playerRef.current;
-            const isMoving = !isPausedLoop && (keys.current['ArrowLeft'] || keys.current['KeyA'] || keys.current['ArrowRight'] || keys.current['KeyD']);
             drawPlayer(ctx, p, time, isMoving, faceImage.current);
+
             ctx.restore();
 
-            const { hp: curHp, score: curScore, powerups: curPows } = statsRef.current;
-            ctx.fillStyle = 'white'; ctx.font = 'bold 24px Outfit';
+            // HUD
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 24px Outfit';
             ctx.fillText(`STAGE: ${stageRef.current}`, 20, 140);
-            ctx.fillText(`SCORE: ${curScore}`, 20, 170);
-            const safeHp = Math.max(0, Math.min(10, curHp || 0));
-            if (safeHp > 0) ctx.fillText(`${'❤️'.repeat(safeHp)}`, 20, 110);
+            ctx.fillText(`SCORE: ${score}`, 20, 170);
+            ctx.fillText(`${'❤️'.repeat(hp)}`, 20, 110);
 
-            if (curPows.bigBullet > Date.now()) {
-                const sec = Math.ceil((curPows.bigBullet - Date.now()) / 1000);
-                ctx.fillStyle = '#FFD600'; ctx.fillText(`BIG BULLET: ${sec}s`, 20, 210);
+            // Powerup HUD
+            if (powerups.bigBullet > Date.now()) {
+                const sec = Math.ceil((powerups.bigBullet - Date.now()) / 1000);
+                ctx.fillStyle = '#FFD600';
+                ctx.fillText(`BIG BULLET: ${sec}s`, 20, 210);
             }
-            if (curPows.fastRun > Date.now()) {
-                const sec = Math.ceil((curPows.fastRun - Date.now()) / 1000);
-                ctx.fillStyle = '#00E676'; ctx.fillText(`FAST RUN: ${sec}s`, 20, 240);
+            if (powerups.fastRun > Date.now()) {
+                const sec = Math.ceil((powerups.fastRun - Date.now()) / 1000);
+                ctx.fillStyle = '#00E676';
+                ctx.fillText(`FAST RUN: ${sec}s`, 20, 240);
             }
 
-            // Minimap
+            // Minimap (Preview)
             ctx.save();
             ctx.translate(canvas.width - MINIMAP_WIDTH - 20, 20);
-            ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT); ctx.clip();
-            const mScaleX = MINIMAP_WIDTH / STAGE_LENGTH;
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.rect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT);
+            ctx.fill();
+            ctx.clip();
+
+            // Show approx 3000px range in the 150px minimap
+            const mScaleX = MINIMAP_WIDTH / 3000;
             const mScaleY = MINIMAP_HEIGHT / 600;
-            ctx.scale(mScaleX, mScaleY); ctx.translate(-cameraX.current, 0);
-            ctx.fillStyle = '#5D4037'; ctx.fillRect(cameraX.current, 500, STAGE_LENGTH + 1000, 100);
-            const bEnt = entities.current.find(ev => ev.type === 'boss');
-            if (bEnt) { ctx.fillStyle = '#FF1744'; ctx.fillRect(bEnt.pos.x, bEnt.pos.y, bEnt.width, bEnt.height); }
-            ctx.fillStyle = '#FFFFFF'; ctx.fillRect(p.pos.x, p.pos.y, p.width, p.height);
+            ctx.scale(mScaleX, mScaleY);
+            ctx.translate(-cameraX.current, 0);
+
+            // Draw floor in minimap
+            ctx.fillStyle = '#5D4037';
+            ctx.fillRect(cameraX.current, 500, 4000, 100);
+
+            // Draw BOSS in minimap
+            const boss = entities.current.find(ev => ev.type === 'boss');
+            ctx.fillStyle = '#FF1744';
+            if (boss) {
+                // Actual boss position
+                ctx.fillRect(boss.pos.x, boss.pos.y, boss.width, boss.height);
+            } else {
+                // Preview marker where boss will appear
+                ctx.globalAlpha = 0.5;
+                ctx.fillRect(BOSS_TRIGGER_X + 600, 100, BOSS_SIZE, BOSS_SIZE);
+                ctx.globalAlpha = 1.0;
+            }
+
+            // Draw player in minimap
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(p.pos.x, p.pos.y, p.width, p.height);
             ctx.restore();
 
-            if (statsRef.current.hp <= 0) {
-                gameActive.current = false; actionsRef.current.setScreen('gameover');
+            if (hp <= 0) {
+                gameActive.current = false;
+                actionsRef.current.setScreen('gameover');
             }
-        } catch (err) {
-            console.error("Game Loop Error:", err);
-        }
-    };
 
-    useEffect(() => {
-        let frameId: number;
-        const tick = (time: number) => {
-            if (loopRef.current) loopRef.current(time);
-            frameId = requestAnimationFrame(tick);
+            frameId = requestAnimationFrame(loop);
         };
-        frameId = requestAnimationFrame(tick);
+
+        frameId = requestAnimationFrame(loop);
         return () => cancelAnimationFrame(frameId);
-    }, []);
+    }, [hp, score, powerups, keys, drawDragon, drawPlayer]);
 
     return (
         <div className="game-container">
             <canvas ref={canvasRef} width={1000} height={600} className="rounded-xl shadow-2xl border-4 border-white/20 bg-sky-200" />
             <MobileControls setKey={setKey} />
-
-            {isPaused && (
-                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[2000] p-4">
-                    <div className="glass-morphism p-8 max-w-sm w-full text-center space-y-6">
-                        <h2 className="text-4xl font-black text-white">PAUSED</h2>
-                        <p className="text-white/80">Would you like to stop the game and return to menu?</p>
-                        <div className="flex flex-col gap-3">
-                            <button
-                                onClick={() => setScreen('menu')}
-                                className="btn-primary w-full text-lg"
-                            >
-                                CONFIRM & STOP
-                            </button>
-                            <button
-                                onClick={() => togglePaused(false)}
-                                className="btn-secondary w-full text-lg"
-                            >
-                                CONTINUE
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };
