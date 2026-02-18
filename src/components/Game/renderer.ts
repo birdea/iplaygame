@@ -1,5 +1,5 @@
-import type { Entity, Monster, GroundItem } from '../../types';
-import { COLORS, STAGE_LENGTH } from '../../constants';
+import type { Entity, Monster, GroundItem, Effect } from '../../types';
+import { COLORS, STAGE_LENGTH, CLUB_LENGTH } from '../../constants';
 
 /** Draw parallax sky, clouds, and hills */
 export function drawBackground(ctx: CanvasRenderingContext2D, cameraX: number, time: number): void {
@@ -115,8 +115,6 @@ export function drawBlock(
     ctx.restore();
 }
 
-
-
 /** Draw the dragon boss (flipped to face left) */
 export function drawDragon(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, time: number, state: string): void {
     ctx.save();
@@ -213,8 +211,10 @@ export function drawPlayer(
     isInvincible: boolean,
     powerups: { bigBullet: number },
     lastSwingTime: number = 0,
+    shieldUntil: number = 0,
 ): void {
-    if (isInvincible && Math.floor(time / 100) % 2 === 0) return;
+    const isShieldActive = shieldUntil > time;
+    if (isInvincible && !isShieldActive && Math.floor(time / 100) % 2 === 0) return;
 
     const { pos } = p;
     const walkCycle = isMoving ? Math.sin(time / 100) : 0;
@@ -228,6 +228,24 @@ export function drawPlayer(
 
     ctx.save();
     ctx.translate(pos.x, pos.y);
+
+    // Draw Shield Effect
+    if (isShieldActive) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(25, 40, 60, 0, Math.PI * 2);
+        const grad = ctx.createRadialGradient(25, 40, 40, 25, 40, 65);
+        grad.addColorStop(0, 'rgba(33, 150, 243, 0)');
+        grad.addColorStop(1, 'rgba(33, 150, 243, 0.4)');
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([10, 5]);
+        ctx.lineDashOffset = -time / 20;
+        ctx.stroke();
+        ctx.restore();
+    }
 
     const isBigBullet = powerups.bigBullet > Date.now();
     const bodyColor = isBigBullet ? '#F44336' : '#D32F2F';
@@ -264,9 +282,8 @@ export function drawPlayer(
     // Right arm + Club
     ctx.save();
     ctx.translate(45, 38);
-    // During swing: arm swings up (-PI/2) then down; otherwise normal walk
     const rightArmAngle = isSwinging
-        ? -Math.PI * 0.6 + swingPhase * Math.PI * 1.1  // up-swing → down-swing
+        ? -Math.PI * 0.6 + swingPhase * Math.PI * 1.1
         : -armCycle * 0.5;
     ctx.rotate(rightArmAngle);
     // Arm
@@ -278,20 +295,20 @@ export function drawPlayer(
     // Club handle
     ctx.strokeStyle = '#8B4513';
     ctx.lineWidth = 6;
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, CLUB_LENGTH); ctx.stroke();
     // Club head
     const clubColor = isBigBullet ? '#FF6F00' : '#5D4037';
     ctx.fillStyle = clubColor;
     ctx.strokeStyle = '#3E2723';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.ellipse(0, 26, 10, 7, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, CLUB_LENGTH + 8, CLUB_LENGTH * 0.45, CLUB_LENGTH * 0.32, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
     // Shine on club head
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.beginPath();
-    ctx.ellipse(-3, 23, 4, 3, -0.4, 0, Math.PI * 2);
+    ctx.ellipse(-CLUB_LENGTH * 0.14, CLUB_LENGTH + 2, CLUB_LENGTH * 0.18, CLUB_LENGTH * 0.14, -0.4, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
@@ -313,7 +330,6 @@ export function drawPlayer(
 
     ctx.restore();
 }
-
 
 /** Draw a monster with limbs, body, and face */
 export function drawMonster(
@@ -393,7 +409,9 @@ export function drawGroundItems(ctx: CanvasRenderingContext2D, items: GroundItem
         // Background circle
         const color = item.powerup === 'bigBullet' ? '#FF6F00'
             : item.powerup === 'fastRun' ? '#00C853'
-                : '#E53935'; // hp
+                : item.powerup === 'shield' ? '#2196F3'
+                    : item.powerup === 'ammo' ? '#FFEB3B'
+                        : '#E53935'; // hp
         ctx.fillStyle = color;
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2;
@@ -403,13 +421,15 @@ export function drawGroundItems(ctx: CanvasRenderingContext2D, items: GroundItem
         ctx.stroke();
 
         // Icon label
-        ctx.fillStyle = '#fff';
+        ctx.fillStyle = (item.powerup === 'ammo') ? '#333' : '#fff';
         ctx.font = `bold ${Math.round(height * 0.55)}px Courier`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const label = item.powerup === 'bigBullet' ? 'B'
             : item.powerup === 'fastRun' ? 'F'
-                : '♥';
+                : item.powerup === 'shield' ? 'S'
+                    : item.powerup === 'ammo' ? 'A'
+                        : '♥';
         ctx.fillText(label, width / 2, height / 2 + 1);
 
         ctx.restore();
@@ -429,6 +449,8 @@ export interface HUDData {
     stage: number;
     score: number;
     hp: number;
+    ammo: number;
+    shields: number;
     powerups: { bigBullet: number; fastRun: number };
 }
 
@@ -441,17 +463,24 @@ export function drawHUD(ctx: CanvasRenderingContext2D, data: HUDData): void {
     ctx.strokeRect(10, 530, 980, 60);
 
     ctx.fillStyle = 'white';
-    ctx.font = 'bold 20px "Courier New"';
-    ctx.fillText(`WORLD 1-${data.stage}`, 30, 565);
-    ctx.fillText(`SCORE: ${String(data.score).padStart(7, '0')}`, 180, 565);
+    ctx.font = 'bold 18px "Courier New"';
+    ctx.fillText(`WORLD 1-${data.stage}`, 30, 555);
+    ctx.fillText(`SCORE: ${String(data.score).padStart(7, '0')}`, 180, 555);
+
+    // Ammo and Shield status
+    ctx.fillStyle = '#FFEB3B';
+    ctx.fillText(`AMMO: ${data.ammo}`, 30, 580);
+    ctx.fillStyle = '#2196F3';
+    ctx.fillText(`SHLD: ${data.shields}`, 180, 580);
 
     // Health icons
     const safeHp = Math.max(0, Math.min(10, data.hp || 0));
+    ctx.fillStyle = 'white';
     ctx.fillText('LIFE:', 450, 565);
     for (let i = 0; i < safeHp; i++) {
         ctx.fillStyle = '#FF5252';
         ctx.beginPath();
-        ctx.arc(520 + i * 25, 555, 6, 0, Math.PI * 2);
+        ctx.arc(520 + i * 25, 555, 8, 0, Math.PI * 2);
         ctx.fill();
     }
 
@@ -466,6 +495,18 @@ export function drawHUD(ctx: CanvasRenderingContext2D, data: HUDData): void {
         ctx.fillStyle = '#00E676';
         ctx.fillText(`FAST: ${sec}s`, 750, 580);
     }
+}
+
+/** Draw impact sparks */
+export function drawEffects(ctx: CanvasRenderingContext2D, effects: Effect[]): void {
+    for (const eff of effects) {
+        ctx.globalAlpha = eff.life;
+        ctx.fillStyle = eff.color;
+        ctx.beginPath();
+        ctx.arc(eff.pos.x, eff.pos.y, eff.size * eff.life, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1.0;
 }
 
 /** Draw the minimap in the top-right corner */

@@ -13,6 +13,7 @@ export interface Entity {
     hp?: number;
     maxHP?: number;
     damage?: number;
+    lastHitBySwing?: number;
 }
 
 export interface Block extends Entity {
@@ -37,9 +38,18 @@ export interface GroundItem {
     width: number;
     height: number;
     /** Which powerup this item grants when collected */
-    powerup: 'bigBullet' | 'fastRun' | 'hp';
+    powerup: 'bigBullet' | 'fastRun' | 'hp' | 'shield' | 'ammo';
     /** Timestamp (ms) when the item was spawned – expires after 10 s */
     spawnedAt: number;
     /** True while the item is in the initial pop-up phase */
     isPopping: boolean;
+}
+
+export interface Effect {
+    id: string;
+    pos: Vector2D;
+    vel: Vector2D;
+    life: number; // 0 to 1, where 1 is fresh
+    color: string;
+    size: number;
 }

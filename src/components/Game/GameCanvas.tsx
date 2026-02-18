@@ -14,11 +14,15 @@ import { applyVerticalPhysics, applyHorizontalPhysics, aabbOverlap } from './phy
 import { generateStage } from './stageGenerator';
 import {
     drawBackground, drawBlock, drawDragon, drawPlayer,
-    drawMonster, drawBullets, drawGroundItems, drawBossHPBar, drawHUD, drawMinimap,
+    drawMonster, drawBullets, drawGroundItems, drawBossHPBar, drawHUD, drawMinimap, drawEffects,
 } from './renderer';
 import { createBossEntity, updateBoss } from './bossAI';
-import { createBullet, updateMonsters, updateBullets, spawnGroundItem, updateGroundItems } from './entityManager';
+import {
+    createBullet, updateMonsters, updateBullets, spawnGroundItem,
+    updateGroundItems, updateEffects, spawnContinuousMonster
+} from './entityManager';
 import { createInitialGameState, createGameActions } from './gameState';
+import { AMMO_REFILL, SHIELD_REFILL } from '../../constants';
 import type { GameLoopState, GameActions } from './gameState';
 
 const MINIMAP_WIDTH = 150;
@@ -75,6 +79,7 @@ export const GameCanvas: React.FC = () => {
     // -----------------------------------------------------------------------
     const faceImage = useRef<HTMLImageElement | null>(null);
     const monsterFaces = useRef<(HTMLImageElement | null)[]>([null, null, null]);
+    const lastMonsterSpawnTime = useRef<number>(0);
 
     useEffect(() => {
         if (faces[selectedFaceIndex]) {
@@ -129,7 +134,7 @@ export const GameCanvas: React.FC = () => {
 
                 // Input handling
                 p.vel.x = 0;
-                if (keys.current['ArrowLeft'] || keys.current['KeyA']) p.vel.x = -MOVE_SPEED * speedMult;
+                if (keys.current['ArrowLeft']) p.vel.x = -MOVE_SPEED * speedMult;
                 if (keys.current['ArrowRight'] || keys.current['KeyD']) p.vel.x = MOVE_SPEED * speedMult;
 
                 if ((keys.current['ArrowUp'] || keys.current['KeyW']) && gs.onGround) {
@@ -137,20 +142,25 @@ export const GameCanvas: React.FC = () => {
                     gs.onGround = false;
                 }
 
-                // Shoot (S key) + trigger swing
-                if (keys.current['KeyS'] && time - gs.lastShootTime > 300) {
+                // Action Inputs
+                // A key: Swing Club
+                if (keys.current['KeyA'] && time - gs.lastSwingTime > 400) {
+                    gs.lastSwingTime = time;
+                }
+
+                // S key: Shoot Bullet
+                if (keys.current['KeyS'] && time - gs.lastShootTime > 300 && gs.ammo > 0) {
                     const isBig = gs.powerups.bigBullet > Date.now();
                     gs.bullets.push(createBullet(p, isBig));
                     gs.lastShootTime = time;
-                    gs.lastSwingTime = time; // trigger club swing on shoot
+                    gs.ammo--;
                 }
 
-                // Auto-swing club every 600ms while moving or periodically
-                const isWalking = keys.current['ArrowLeft'] || keys.current['KeyA'] || keys.current['ArrowRight'] || keys.current['KeyD'];
-                if (isWalking && time - gs.lastSwingTime > 600) {
-                    gs.lastSwingTime = time;
-                } else if (!isWalking && time - gs.lastSwingTime > 1200) {
-                    gs.lastSwingTime = time; // idle swing every 1.2s
+                // D key: Use Shield
+                if (keys.current['KeyD'] && time - gs.lastShieldTime > 500) {
+                    if (actions.useShield()) {
+                        gs.lastShieldTime = time;
+                    }
                 }
 
                 // Physics
@@ -160,8 +170,11 @@ export const GameCanvas: React.FC = () => {
                 if (vertResult.hitQuestion) {
                     vertResult.hitQuestion.blockType = 'brick';
                     const rand = Math.random();
-                    const powerup: 'bigBullet' | 'fastRun' | 'hp' =
-                        rand < 0.25 ? 'bigBullet' : rand < 0.5 ? 'fastRun' : 'hp';
+                    const powerup: 'bigBullet' | 'fastRun' | 'hp' | 'shield' | 'ammo' =
+                        rand < 0.2 ? 'bigBullet' :
+                            rand < 0.4 ? 'fastRun' :
+                                rand < 0.6 ? 'shield' :
+                                    rand < 0.8 ? 'ammo' : 'hp';
                     gs.groundItems.push(spawnGroundItem(vertResult.hitQuestion, powerup));
                     actions.addScore(100);
                 }
@@ -226,9 +239,12 @@ export const GameCanvas: React.FC = () => {
                 }
 
                 // Monster logic
+                spawnContinuousMonster(gs.entities, gs.cameraX, gs.stage, time, lastMonsterSpawnTime);
+
                 gs.entities = updateMonsters(
                     gs.entities, p, (amt) => actions.takeDamage(amt),
                     (amt) => actions.addScore(amt),
+                    time, gs.lastSwingTime, gs.effects, gs.cameraX,
                 );
 
                 // Boss AI
@@ -245,7 +261,7 @@ export const GameCanvas: React.FC = () => {
                 }
 
                 // Bullet collisions
-                const bulletResult = updateBullets(gs.bullets, gs.entities, p, (amt) => actions.takeDamage(amt), gs.cameraX);
+                const bulletResult = updateBullets(gs.bullets, gs.entities, p, (amt) => actions.takeDamage(amt), gs.cameraX, gs.effects);
                 gs.entities = bulletResult.entities;
                 gs.bullets = bulletResult.bullets;
 
@@ -264,11 +280,18 @@ export const GameCanvas: React.FC = () => {
                 if (itemResult.collected) {
                     if (itemResult.collected === 'hp') {
                         actions.setHP(gs.hp + 1);
+                    } else if (itemResult.collected === 'ammo') {
+                        actions.addAmmo(AMMO_REFILL);
+                    } else if (itemResult.collected === 'shield') {
+                        actions.addShields(SHIELD_REFILL);
                     } else {
-                        actions.activatePowerup(itemResult.collected, 30000);
+                        actions.activatePowerup(itemResult.collected as 'bigBullet' | 'fastRun', 30000);
                     }
                     actions.addScore(50);
                 }
+
+                // Effects update
+                gs.effects = updateEffects(gs.effects);
 
                 gs.cameraX = Math.max(gs.cameraX, p.pos.x - 400);
             }
@@ -300,6 +323,9 @@ export const GameCanvas: React.FC = () => {
             // Ground items (popped from ? blocks)
             drawGroundItems(ctx, gs.groundItems);
 
+            // Effects (Sparks)
+            drawEffects(ctx, gs.effects);
+
             // Player
             const p = gs.player;
             const isMoving = !gs.isPaused && (keys.current['ArrowLeft'] || keys.current['KeyA'] || keys.current['ArrowRight'] || keys.current['KeyD']);
@@ -309,7 +335,7 @@ export const GameCanvas: React.FC = () => {
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 3;
             ctx.shadowOffsetY = 3;
-            drawPlayer(ctx, p, time, isMoving, faceImage.current, Date.now() < gs.invincibleUntil, gs.powerups, gs.lastSwingTime);
+            drawPlayer(ctx, p, time, isMoving, faceImage.current, Date.now() < gs.invincibleUntil, gs.powerups, gs.lastSwingTime, gs.shieldUntil);
             ctx.restore();
 
             ctx.restore();
@@ -319,6 +345,8 @@ export const GameCanvas: React.FC = () => {
                 stage: gs.stage,
                 score: gs.score,
                 hp: gs.hp,
+                ammo: gs.ammo,
+                shields: gs.shields,
                 powerups: gs.powerups,
             });
 

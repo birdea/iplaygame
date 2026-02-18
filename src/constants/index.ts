@@ -9,6 +9,8 @@ export const BULLET_SPEED = 10;
 
 export const PLAYER_WIDTH = 50;
 export const PLAYER_HEIGHT = 80; // Tall Mario-like height
+export const CLUB_LENGTH = 44; // Doubled from 22
+export const CLUB_RANGE = 100; // Effective hit range (doubled from implied baseline)
 export const BOSS_SIZE = 400; // Roughly 7-8x player width, fits in canvas height
 export const MINIMAP_SCALE = 0.15;
 export const MINIMAP_WIDTH = 150;
@@ -22,3 +24,6 @@ export const COLORS = {
 };
 export const AUTO_SCROLL_SPEED = 1.0;
 export const INVINCIBILITY_DURATION = 2000; // 2 seconds
+export const SHIELD_DURATION = 5000; // 5 seconds
+export const SHIELD_REFILL = 3;
+export const AMMO_REFILL = 30;
