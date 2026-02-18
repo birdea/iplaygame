@@ -1,10 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../../store/useGameStore';
 import { useInputs } from '../../hooks/useInputs';
 import {
     UNIT_SIZE, STAGE_LENGTH, BOSS_TRIGGER_X, BOSS_SIZE,
     GRAVITY, JUMP_FORCE, MOVE_SPEED, BULLET_SPEED,
-    PLAYER_WIDTH, PLAYER_HEIGHT
+    PLAYER_WIDTH, PLAYER_HEIGHT, AUTO_SCROLL_SPEED
 } from '../../constants';
 import type { Entity, Block, Monster } from '../../types';
 import confetti from 'canvas-confetti';
@@ -64,6 +64,9 @@ export const GameCanvas: React.FC = () => {
         }
     }, [faces, selectedFaceIndex]);
 
+    const MINIMAP_WIDTH = 150;
+    const MINIMAP_HEIGHT = 90;
+
     // Generate Stage
     useEffect(() => {
         const newEntities: Entity[] = [];
@@ -82,6 +85,10 @@ export const GameCanvas: React.FC = () => {
         }
 
         // Random Bricks and Monsters
+        // Difficulty scaling
+        const monsterChance = 0.15 + (stageRef.current - 1) * 0.1;
+        const monsterSpeed = 2 + (stageRef.current - 1) * 1.5;
+
         for (let x = 500; x < BOSS_TRIGGER_X - 500; x += UNIT_SIZE * 2) {
             if (Math.random() > 0.7) {
                 newEntities.push({
@@ -95,11 +102,11 @@ export const GameCanvas: React.FC = () => {
                 } as Block);
             }
 
-            if (Math.random() > 0.85) {
+            if (Math.random() < monsterChance) {
                 newEntities.push({
                     id: `monster-${x}`,
                     pos: { x, y: 450 },
-                    vel: { x: -2, y: 0 },
+                    vel: { x: -monsterSpeed, y: 0 },
                     width: UNIT_SIZE,
                     height: UNIT_SIZE,
                     type: 'monster',
@@ -117,6 +124,165 @@ export const GameCanvas: React.FC = () => {
         gameActive.current = true;
     }, [stage]);
 
+    // Helper: Draw Dragon
+    const drawDragon = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, time: number, state: string) => {
+        ctx.save();
+        ctx.translate(x + width / 2, y + height / 2);
+
+        // Dragon is now larger, adjusted scale
+        const scale = Math.min(width, height) / 300;
+        ctx.scale(scale, scale);
+
+        const bodyColor = state === 'punch' ? '#FF1744' : '#1A237E';
+        const strokeColor = '#FFFFFF';
+        ctx.lineWidth = 5;
+
+        const drawDiamond = (dx: number, dy: number, s: number, angle: number) => {
+            ctx.save();
+            ctx.translate(dx, dy);
+            ctx.rotate(angle);
+            ctx.beginPath();
+            ctx.moveTo(0, -s);
+            ctx.lineTo(s * 0.6, 0);
+            ctx.lineTo(0, s);
+            ctx.lineTo(-s * 0.6, 0);
+            ctx.closePath();
+            ctx.fillStyle = bodyColor;
+            ctx.strokeStyle = strokeColor;
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        };
+
+        // Back diamond "spikes"
+        for (let i = 0; i < 3; i++) {
+            const offset = Math.sin(time / 200 + i) * 10;
+            drawDiamond(-80 - i * 40, offset - 20, 30, Math.PI / 4);
+            drawDiamond(-80 - i * 40, offset + 60, 30, -Math.PI / 4);
+        }
+
+        // 2. Draw Body (The circular part behind the head)
+        ctx.beginPath();
+        ctx.arc(-60, 20, 50, 0, Math.PI * 2);
+        ctx.fillStyle = bodyColor;
+        ctx.strokeStyle = strokeColor;
+        ctx.fill();
+        ctx.stroke();
+
+        // 3. Draw Head (The Pac-man like part with mouth)
+        ctx.save();
+        const mouthOpen = Math.abs(Math.sin(time / 300)) * 0.5 + 0.2;
+        ctx.beginPath();
+        // Drawing a modified circle with a mouth gap
+        ctx.arc(40, 0, 80, mouthOpen, Math.PI * 2 - mouthOpen);
+        ctx.lineTo(40, 0);
+        ctx.closePath();
+        ctx.fillStyle = bodyColor;
+        ctx.strokeStyle = strokeColor;
+        ctx.fill();
+        ctx.stroke();
+
+        // Eye
+        ctx.fillStyle = (state === 'fire' || state === 'punch') ? 'yellow' : 'white';
+        ctx.beginPath();
+        ctx.ellipse(60, -30, 20, 10, Math.PI / 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'black';
+        ctx.beginPath();
+        ctx.arc(70, -35, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 4. Fire Breath
+        if (state === 'fire') {
+            ctx.save();
+            ctx.translate(100, 0);
+            ctx.fillStyle = 'orange';
+            for (let i = 0; i < 5; i++) {
+                const fx = Math.random() * 50;
+                const fy = (Math.random() - 0.5) * 40;
+                ctx.beginPath();
+                ctx.arc(fx, fy, 10 + Math.random() * 10, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+
+        ctx.restore();
+        ctx.restore();
+    }, []);
+
+    // Helper: Draw Player with Arms and Legs
+    const drawPlayer = useCallback((ctx: CanvasRenderingContext2D, p: Entity, time: number, isMoving: boolean, faceImg: HTMLImageElement | null) => {
+        const { pos } = p;
+
+        // 1. Walking Animation Factor
+        const walkCycle = isMoving ? Math.sin(time / 100) : 0;
+        const armCycle = isMoving ? Math.sin(time / 100 + Math.PI) : 0;
+
+        ctx.save();
+        ctx.translate(pos.x, pos.y);
+
+        // Body Color (Active Powerup check)
+        const isBigBullet = powerups.bigBullet > Date.now();
+        const bodyColor = isBigBullet ? '#F44336' : '#D32F2F';
+
+        // 2. Draw Legs
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 10;
+        ctx.lineCap = 'round';
+
+        // Left Leg
+        ctx.save();
+        ctx.translate(15, 60);
+        ctx.rotate(walkCycle * 0.5);
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 20); ctx.stroke();
+        ctx.restore();
+
+        // Right Leg
+        ctx.save();
+        ctx.translate(35, 60);
+        ctx.rotate(-walkCycle * 0.5);
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 20); ctx.stroke();
+        ctx.restore();
+
+        // 3. Draw Body
+        ctx.fillStyle = bodyColor;
+        ctx.fillRect(0, 30, 50, 40);
+
+        // 4. Draw Arms
+        ctx.lineWidth = 8;
+        // Left Arm
+        ctx.save();
+        ctx.translate(5, 40);
+        ctx.rotate(armCycle * 0.5);
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-15, 15); ctx.stroke();
+        ctx.restore();
+
+        // Right Arm
+        ctx.save();
+        ctx.translate(45, 40);
+        ctx.rotate(-armCycle * 0.5);
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(15, 15); ctx.stroke();
+        ctx.restore();
+
+        // 5. Draw Head
+        if (faceImg) {
+            ctx.save();
+            ctx.beginPath(); ctx.arc(25, 25, 25, 0, Math.PI * 2); ctx.clip();
+            ctx.drawImage(faceImg, 0, 0, 50, 50);
+            ctx.restore();
+            // Head border
+            ctx.strokeStyle = '#FFCCBC';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(25, 25, 25, 0, Math.PI * 2); ctx.stroke();
+        } else {
+            ctx.fillStyle = '#FFCCBC';
+            ctx.beginPath(); ctx.arc(25, 25, 25, 0, Math.PI * 2); ctx.fill();
+        }
+
+        ctx.restore();
+    }, [powerups.bigBullet]);
+
     // Game Loop
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -133,10 +299,10 @@ export const GameCanvas: React.FC = () => {
                 id: `bullet-${Date.now()}`,
                 pos: { x: playerRef.current.pos.x + playerRef.current.width, y: playerRef.current.pos.y + 20 },
                 vel: { x: BULLET_SPEED * (isBig ? 1.2 : 1), y: 0 },
-                width: isBig ? 24 : 10,
-                height: isBig ? 24 : 10,
+                width: isBig ? 30 : 12,
+                height: isBig ? 30 : 12,
                 type: 'bullet',
-                damage: isBig ? 1.5 : 1
+                damage: isBig ? 2 : 1
             });
         };
 
@@ -145,27 +311,34 @@ export const GameCanvas: React.FC = () => {
             bossActive.current = true;
             entities.current.push({
                 id: 'boss',
-                pos: { x: BOSS_TRIGGER_X + 400, y: 300 },
-                vel: { x: -1, y: 0 },
+                pos: { x: BOSS_TRIGGER_X + 400, y: 100 },
+                vel: { x: -2, y: 0 },
                 width: BOSS_SIZE,
                 height: BOSS_SIZE,
                 type: 'boss',
-                hp: 20 * stageRef.current,
+                hp: 50 * stageRef.current,
+                maxHP: 50 * stageRef.current,
             } as Entity);
         };
 
         const loop = (time: number) => {
             if (!gameActive.current) return;
 
+            // -- 0. AUTO SCROLL --
+            cameraX.current += AUTO_SCROLL_SPEED;
+
             // Powerup checks
-            const speedMult = powerups.fastRun > Date.now() ? 1.5 : 1;
+            const speedMult = powerups.fastRun > Date.now() ? 1.6 : 1;
 
             // -- 1. INPUT --
+            let isMoving = false;
             // Left/Right
             if (keys.current['ArrowLeft'] || keys.current['KeyA']) {
                 playerRef.current.vel.x = -MOVE_SPEED * speedMult;
+                isMoving = true;
             } else if (keys.current['ArrowRight'] || keys.current['KeyD']) {
                 playerRef.current.vel.x = MOVE_SPEED * speedMult;
+                isMoving = true;
             } else {
                 playerRef.current.vel.x = 0;
             }
@@ -174,11 +347,6 @@ export const GameCanvas: React.FC = () => {
             if ((keys.current['ArrowUp'] || keys.current['KeyW'] || keys.current['Space']) && onGround.current) {
                 playerRef.current.vel.y = JUMP_FORCE;
                 onGround.current = false;
-            }
-
-            // Down: (Can be used for crouching or fast fall if implemented)
-            if (keys.current['ArrowDown'] || keys.current['KeyS']) {
-                // Currently no action for Down in this side-scroller
             }
 
             // S for Shoot
@@ -193,7 +361,11 @@ export const GameCanvas: React.FC = () => {
             p.pos.x += p.vel.x;
             p.pos.y += p.vel.y;
 
-            if (p.pos.x < 0) p.pos.x = 0;
+            // SCREEN BOUNDARY: CANNOT GO LEFT OF CAMERA
+            if (p.pos.x < cameraX.current) {
+                p.pos.x = cameraX.current;
+            }
+
             if (p.pos.x > BOSS_TRIGGER_X && !bossActive.current) {
                 spawnBoss();
             }
@@ -219,18 +391,10 @@ export const GameCanvas: React.FC = () => {
                                 (e as Block).blockType = 'brick';
                                 // Random Item Logic
                                 const rand = Math.random();
-                                if (rand < 0.25) { // bigBullet
-                                    actionsRef.current.activatePowerup('bigBullet', 30000);
-                                    actionsRef.current.addScore(100);
-                                } else if (rand < 0.5) { // fastRun
-                                    actionsRef.current.activatePowerup('fastRun', 30000);
-                                    actionsRef.current.addScore(100);
-                                } else if (rand < 0.75) { // HP +1
-                                    actionsRef.current.setHP(hp + 1);
-                                    actionsRef.current.addScore(100);
-                                } else { // Nothing
-                                    actionsRef.current.addScore(10);
-                                }
+                                if (rand < 0.25) actionsRef.current.activatePowerup('bigBullet', 30000);
+                                else if (rand < 0.5) actionsRef.current.activatePowerup('fastRun', 30000);
+                                else if (rand < 0.75) actionsRef.current.setHP(hp + 1);
+                                actionsRef.current.addScore(100);
                             }
                         }
                     }
@@ -238,7 +402,9 @@ export const GameCanvas: React.FC = () => {
 
                 if (e.type === 'monster') {
                     e.pos.x += e.vel.x;
-                    if (e.pos.x < 0 || e.pos.x > STAGE_LENGTH) e.vel.x *= -1;
+                    if (e.pos.x < cameraX.current - 100 || e.pos.x > STAGE_LENGTH) {
+                        // Cleanup or Respawn if needed, but for now just let it go
+                    }
 
                     if (p.pos.x < e.pos.x + e.width &&
                         p.pos.x + p.width > e.pos.x &&
@@ -257,49 +423,46 @@ export const GameCanvas: React.FC = () => {
                 }
 
                 if (e.type === 'boss') {
-                    const distToPlayer = e.pos.x - p.pos.x;
-
-                    // Boss Movement: Approaches Player
-                    if (distToPlayer > 150) {
-                        e.pos.x -= 1.5;
-                    } else if (distToPlayer < 100) {
-                        e.pos.x += 1;
+                    // Boss Gravity and Ground
+                    e.vel.y += GRAVITY * 0.4; // Low gravity for high jump
+                    e.pos.y += e.vel.y;
+                    if (e.pos.y + e.height > 500) {
+                        e.pos.y = 500 - e.height;
+                        e.vel.y = 0;
+                        if (Math.random() < 0.02) e.vel.y = -12; // Occasional big jump
                     }
 
-                    // Floating
-                    e.pos.y = 300 + Math.sin(time / 500) * 50;
+                    const distToPlayer = e.pos.x - p.pos.x;
+                    // Keep some space but approach
+                    if (distToPlayer > 300) e.pos.x -= 2;
+                    else if (distToPlayer < 150) e.pos.x += 2;
 
-                    // Boss Attacks
-                    if (time - bossTactics.current.lastAttackTime > 3000) {
-                        const attackType = Math.random() > 0.5 ? 'punch' : 'fire';
-                        bossTactics.current.state = attackType;
+                    // Attack: Multi-fire
+                    const cooldown = 4000 / stageRef.current;
+                    if (time - bossTactics.current.lastAttackTime > cooldown) {
+                        bossTactics.current.state = 'fire';
                         bossTactics.current.lastAttackTime = time;
                         bossTactics.current.attackDuration = 1000;
 
-                        if (attackType === 'fire') {
-                            // Spawn Boss Bullet (Fire)
-                            bullets.current.push({
-                                id: `boss-fire-${Date.now()}`,
-                                pos: { x: e.pos.x - 20, y: e.pos.y + e.height / 2 },
-                                vel: { x: -8, y: 0 },
-                                width: 20,
-                                height: 20,
-                                type: 'boss-bullet'
-                            });
+                        // Burst 3 bullets
+                        for (let i = 0; i < 3; i++) {
+                            setTimeout(() => {
+                                if (!gameActive.current) return;
+                                bullets.current.push({
+                                    id: `boss-fire-${Date.now()}-${i}`,
+                                    pos: { x: e.pos.x, y: e.pos.y + e.height * 0.3 + i * 30 },
+                                    vel: { x: -6 - Math.random() * 2, y: (Math.random() - 0.5) * 3 },
+                                    width: 25,
+                                    height: 25,
+                                    type: 'boss-bullet'
+                                });
+                            }, i * 250);
                         }
                     }
 
                     if (bossTactics.current.attackDuration > 0) {
                         bossTactics.current.attackDuration -= 16;
-                        if (bossTactics.current.attackDuration <= 0) {
-                            bossTactics.current.state = 'idle';
-                        }
-                    }
-
-                    // Punch Attack logic 
-                    if (bossTactics.current.state === 'punch') {
-                        // Boss lunges forward
-                        e.pos.x -= 5;
+                        if (bossTactics.current.attackDuration <= 0) bossTactics.current.state = 'idle';
                     }
 
                     if (p.pos.x < e.pos.x + e.width &&
@@ -315,6 +478,7 @@ export const GameCanvas: React.FC = () => {
             // Bullet collisions
             bullets.current.forEach(b => {
                 b.pos.x += b.vel.x;
+                b.pos.y += b.vel.y;
                 if (b.type === 'bullet') {
                     const boss = entities.current.find(ent => ent.type === 'boss');
                     if (boss && b.pos.x < boss.pos.x + boss.width &&
@@ -332,7 +496,6 @@ export const GameCanvas: React.FC = () => {
                             actionsRef.current.setScreen('victory');
                         }
                     }
-                    // Monster kill
                     entities.current.forEach(ent => {
                         if (ent.type === 'monster' && b.pos.x < ent.pos.x + ent.width &&
                             b.pos.x + b.width > ent.pos.x &&
@@ -356,6 +519,8 @@ export const GameCanvas: React.FC = () => {
             });
             bullets.current = bullets.current.filter(b => b.pos.x > cameraX.current - 100 && b.pos.x < cameraX.current + 1200);
 
+            // AUTO-CAM is already incremented, so we just make sure it stays at least at player - offset
+            // But user said "slowly move", so we don't necessarily snap to player unless player moves far right
             cameraX.current = Math.max(cameraX.current, p.pos.x - 400);
 
             // -- 3. RENDER --
@@ -377,25 +542,13 @@ export const GameCanvas: React.FC = () => {
                     ctx.fillStyle = '#E53935';
                     ctx.fillRect(e.pos.x, e.pos.y, e.width, e.height);
                 } else if (e.type === 'boss') {
-                    ctx.fillStyle = bossTactics.current.state === 'punch' ? '#FF1744' : '#1A237E';
-                    ctx.fillRect(e.pos.x, e.pos.y, e.width, e.height);
-
-                    // Boss eye
-                    ctx.fillStyle = 'yellow';
-                    ctx.fillRect(e.pos.x + 20, e.pos.y + 30, 30, 10);
+                    drawDragon(ctx, e.pos.x, e.pos.y, e.width, e.height, time, bossTactics.current.state);
 
                     // HP Bar
-                    ctx.fillStyle = 'red';
+                    ctx.fillStyle = 'rgba(0,0,0,0.5)';
                     ctx.fillRect(e.pos.x, e.pos.y - 40, e.width, 10);
-                    ctx.fillStyle = 'green';
-                    ctx.fillRect(e.pos.x, e.pos.y - 40, (e.hp! / (20 * stageRef.current)) * e.width, 10);
-
-                    if (bossTactics.current.state === 'fire') {
-                        ctx.fillStyle = 'orange';
-                        ctx.beginPath();
-                        ctx.arc(e.pos.x - 10, e.pos.y + e.height / 2, 15, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
+                    ctx.fillStyle = '#4CAF50';
+                    ctx.fillRect(e.pos.x, e.pos.y - 40, (e.hp! / (e.maxHP || 100)) * e.width, 10);
                 }
             });
 
@@ -406,18 +559,7 @@ export const GameCanvas: React.FC = () => {
                 ctx.fill();
             });
 
-            ctx.fillStyle = powerups.bigBullet > Date.now() ? '#F44336' : '#D32F2F';
-            ctx.fillRect(p.pos.x, p.pos.y + 30, p.width, p.height - 30);
-
-            if (faceImage.current) {
-                ctx.save();
-                ctx.beginPath(); ctx.arc(p.pos.x + 25, p.pos.y + 25, 25, 0, Math.PI * 2); ctx.clip();
-                ctx.drawImage(faceImage.current, p.pos.x, p.pos.y, 50, 50);
-                ctx.restore();
-            } else {
-                ctx.fillStyle = '#FFCCBC';
-                ctx.beginPath(); ctx.arc(p.pos.x + 25, p.pos.y + 25, 25, 0, Math.PI * 2); ctx.fill();
-            }
+            drawPlayer(ctx, p, time, isMoving, faceImage.current);
 
             ctx.restore();
 
@@ -440,6 +582,42 @@ export const GameCanvas: React.FC = () => {
                 ctx.fillText(`FAST RUN: ${sec}s`, 20, 240);
             }
 
+            // Minimap (Preview)
+            ctx.save();
+            ctx.translate(canvas.width - MINIMAP_WIDTH - 20, 20);
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.rect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT);
+            ctx.fill();
+            ctx.clip();
+
+            // Show approx 3000px range in the 150px minimap
+            const minimapScaleX = MINIMAP_WIDTH / 3000;
+            const minimapScaleY = MINIMAP_HEIGHT / 600;
+            ctx.scale(minimapScaleX, minimapScaleY);
+            ctx.translate(-cameraX.current, 0);
+
+            // Draw floor in minimap
+            ctx.fillStyle = '#5D4037';
+            ctx.fillRect(cameraX.current, 500, 4000, 100);
+
+            // Draw BOSS in minimap
+            const boss = entities.current.find(e => e.type === 'boss');
+            ctx.fillStyle = '#FF1744';
+            if (boss) {
+                // Actual boss position
+                ctx.fillRect(boss.pos.x, boss.pos.y, boss.width, boss.height);
+            } else {
+                // Preview marker where boss will appear
+                ctx.globalAlpha = 0.5;
+                ctx.fillRect(BOSS_TRIGGER_X + 400, 100, BOSS_SIZE, BOSS_SIZE);
+                ctx.globalAlpha = 1.0;
+            }
+
+            // Draw player in minimap
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(p.pos.x, p.pos.y, p.width, p.height);
+            ctx.restore();
+
             if (hp <= 0) {
                 gameActive.current = false;
                 actionsRef.current.setScreen('gameover');
@@ -450,7 +628,7 @@ export const GameCanvas: React.FC = () => {
 
         frameId = requestAnimationFrame(loop);
         return () => cancelAnimationFrame(frameId);
-    }, [hp, score, powerups, keys]);
+    }, [hp, score, powerups, keys, drawDragon, drawPlayer]);
 
     return (
         <div className="game-container">
