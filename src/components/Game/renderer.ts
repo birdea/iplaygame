@@ -179,7 +179,7 @@ export function drawDragon(ctx: CanvasRenderingContext2D, x: number, y: number, 
     ctx.restore();
 }
 
-/** Draw the player character with arms, legs, and optional face image */
+/** Draw the player character with arms, legs, club weapon, and optional face image */
 export function drawPlayer(
     ctx: CanvasRenderingContext2D,
     p: Entity,
@@ -188,12 +188,19 @@ export function drawPlayer(
     faceImg: HTMLImageElement | null,
     isInvincible: boolean,
     powerups: { bigBullet: number },
+    lastSwingTime: number = 0,
 ): void {
     if (isInvincible && Math.floor(time / 100) % 2 === 0) return;
 
     const { pos } = p;
     const walkCycle = isMoving ? Math.sin(time / 100) : 0;
     const armCycle = isMoving ? Math.sin(time / 100 + Math.PI) : 0;
+
+    // Swing animation: 0.5s duration after lastSwingTime
+    const swingElapsed = time - lastSwingTime;
+    const isSwinging = swingElapsed < 500;
+    // swingPhase: 0→1→0 arc over 500ms
+    const swingPhase = isSwinging ? Math.sin((swingElapsed / 500) * Math.PI) : 0;
 
     ctx.save();
     ctx.translate(pos.x, pos.y);
@@ -222,7 +229,7 @@ export function drawPlayer(
     ctx.fillStyle = bodyColor;
     ctx.fillRect(0, 30, 50, 40);
 
-    // Arms
+    // Left arm (normal walk swing)
     ctx.lineWidth = 8;
     ctx.save();
     ctx.translate(5, 40);
@@ -230,10 +237,40 @@ export function drawPlayer(
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-15, 15); ctx.stroke();
     ctx.restore();
 
+    // Right arm + Club
     ctx.save();
-    ctx.translate(45, 40);
-    ctx.rotate(-armCycle * 0.5);
+    ctx.translate(45, 38);
+    // During swing: arm swings up (-PI/2) then down; otherwise normal walk
+    const rightArmAngle = isSwinging
+        ? -Math.PI * 0.6 + swingPhase * Math.PI * 1.1  // up-swing → down-swing
+        : -armCycle * 0.5;
+    ctx.rotate(rightArmAngle);
+    // Arm
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(15, 15); ctx.stroke();
+
+    // Club (attached to end of right arm)
+    ctx.save();
+    ctx.translate(15, 15);
+    // Club handle
+    ctx.strokeStyle = '#8B4513';
+    ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 22); ctx.stroke();
+    // Club head
+    const clubColor = isBigBullet ? '#FF6F00' : '#5D4037';
+    ctx.fillStyle = clubColor;
+    ctx.strokeStyle = '#3E2723';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, 26, 10, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Shine on club head
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(-3, 23, 4, 3, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
     ctx.restore();
 
     // Head
@@ -252,6 +289,7 @@ export function drawPlayer(
 
     ctx.restore();
 }
+
 
 /** Draw a monster with limbs, body, and face */
 export function drawMonster(

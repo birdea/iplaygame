@@ -123,7 +123,7 @@ export const GameCanvas: React.FC = () => {
 
             if (!gs.isPaused) {
                 // -- 1. LOGIC UPDATES --
-                gs.cameraX += AUTO_SCROLL_SPEED;
+                if (!gs.bossActive) gs.cameraX += AUTO_SCROLL_SPEED;
                 const speedMult = gs.powerups.fastRun > Date.now() ? 1.6 : 1;
                 const p = gs.player;
 
@@ -132,16 +132,25 @@ export const GameCanvas: React.FC = () => {
                 if (keys.current['ArrowLeft'] || keys.current['KeyA']) p.vel.x = -MOVE_SPEED * speedMult;
                 if (keys.current['ArrowRight'] || keys.current['KeyD']) p.vel.x = MOVE_SPEED * speedMult;
 
-                if ((keys.current['ArrowUp'] || keys.current['KeyW'] || keys.current['Space']) && gs.onGround) {
+                if ((keys.current['ArrowUp'] || keys.current['KeyW']) && gs.onGround) {
                     p.vel.y = JUMP_FORCE;
                     gs.onGround = false;
                 }
 
-                // Shoot
+                // Shoot (S key) + trigger swing
                 if (keys.current['KeyS'] && time - gs.lastShootTime > 300) {
                     const isBig = gs.powerups.bigBullet > Date.now();
                     gs.bullets.push(createBullet(p, isBig));
                     gs.lastShootTime = time;
+                    gs.lastSwingTime = time; // trigger club swing on shoot
+                }
+
+                // Auto-swing club every 600ms while moving or periodically
+                const isWalking = keys.current['ArrowLeft'] || keys.current['KeyA'] || keys.current['ArrowRight'] || keys.current['KeyD'];
+                if (isWalking && time - gs.lastSwingTime > 600) {
+                    gs.lastSwingTime = time;
+                } else if (!isWalking && time - gs.lastSwingTime > 1200) {
+                    gs.lastSwingTime = time; // idle swing every 1.2s
                 }
 
                 // Physics
@@ -246,7 +255,7 @@ export const GameCanvas: React.FC = () => {
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 3;
             ctx.shadowOffsetY = 3;
-            drawPlayer(ctx, p, time, isMoving, faceImage.current, Date.now() < gs.invincibleUntil, gs.powerups);
+            drawPlayer(ctx, p, time, isMoving, faceImage.current, Date.now() < gs.invincibleUntil, gs.powerups, gs.lastSwingTime);
             ctx.restore();
 
             ctx.restore();

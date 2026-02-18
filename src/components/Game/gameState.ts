@@ -26,6 +26,7 @@ export interface GameLoopState {
     invincibleUntil: number;
     lastShootTime: number;
     lastEscTime: number;
+    lastSwingTime: number; // Club swing animation
 
     // Game flow
     gameActive: boolean;
@@ -60,6 +61,7 @@ export function createInitialGameState(stage: number = 1): GameLoopState {
         invincibleUntil: 0,
         lastShootTime: 0,
         lastEscTime: 0,
+        lastSwingTime: 0,
         gameActive: true,
         hp: 3,
         score: 0,
