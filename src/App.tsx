@@ -9,7 +9,9 @@ const App: React.FC = () => {
   const { screen, setScreen, resetGame, nextStage, stage } = useGameStore();
 
   useEffect(() => {
-    const audio = new Audio('/bgm_001.m4a');
+    const playlist = ['/bgm_001.m4a', '/bmg_002.m4a', '/bgm_003.m4a'];
+    const randomTrack = playlist[Math.floor(Math.random() * playlist.length)];
+    const audio = new Audio(randomTrack);
     audio.loop = true;
     audio.volume = 0.5;
 

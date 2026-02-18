@@ -177,7 +177,7 @@ body {
 #root {
   height: 100%;
   width: 100%;
-  background-image: url('/bgimage_001.HEIC');
+  background-image: url('/public/main_logo.png');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
