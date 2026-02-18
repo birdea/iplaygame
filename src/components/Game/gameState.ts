@@ -1,4 +1,4 @@
-import type { Entity } from '../../types';
+import type { Entity, GroundItem } from '../../types';
 import { PLAYER_WIDTH, PLAYER_HEIGHT, INVINCIBILITY_DURATION } from '../../constants';
 import type { BossTactics } from './bossAI';
 import { createBossTactics } from './bossAI';
@@ -13,6 +13,7 @@ export interface GameLoopState {
     // Entity collections
     entities: Entity[];
     bullets: Entity[];
+    groundItems: GroundItem[];
 
     // Camera & physics
     cameraX: number;
@@ -54,6 +55,7 @@ export function createInitialGameState(stage: number = 1): GameLoopState {
         },
         entities: [],
         bullets: [],
+        groundItems: [],
         cameraX: 0,
         onGround: false,
         bossActive: false,

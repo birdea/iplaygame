@@ -14,10 +14,10 @@ import { applyVerticalPhysics, applyHorizontalPhysics, aabbOverlap } from './phy
 import { generateStage } from './stageGenerator';
 import {
     drawBackground, drawBlock, drawDragon, drawPlayer,
-    drawMonster, drawBullets, drawBossHPBar, drawHUD, drawMinimap,
+    drawMonster, drawBullets, drawGroundItems, drawBossHPBar, drawHUD, drawMinimap,
 } from './renderer';
 import { createBossEntity, updateBoss } from './bossAI';
-import { createBullet, updateMonsters, updateBullets } from './entityManager';
+import { createBullet, updateMonsters, updateBullets, spawnGroundItem, updateGroundItems } from './entityManager';
 import { createInitialGameState, createGameActions } from './gameState';
 import type { GameLoopState, GameActions } from './gameState';
 
@@ -160,9 +160,9 @@ export const GameCanvas: React.FC = () => {
                 if (vertResult.hitQuestion) {
                     vertResult.hitQuestion.blockType = 'brick';
                     const rand = Math.random();
-                    if (rand < 0.25) actions.activatePowerup('bigBullet', 30000);
-                    else if (rand < 0.5) actions.activatePowerup('fastRun', 30000);
-                    else if (rand < 0.75) actions.setHP(gs.hp + 1);
+                    const powerup: 'bigBullet' | 'fastRun' | 'hp' =
+                        rand < 0.25 ? 'bigBullet' : rand < 0.5 ? 'fastRun' : 'hp';
+                    gs.groundItems.push(spawnGroundItem(vertResult.hitQuestion, powerup));
                     actions.addScore(100);
                 }
 
@@ -258,6 +258,18 @@ export const GameCanvas: React.FC = () => {
                     actions.addScore(bulletResult.scoreGained);
                 }
 
+                // Ground items update
+                const itemResult = updateGroundItems(gs.groundItems, p, gs.entities, gs.cameraX);
+                gs.groundItems = itemResult.groundItems;
+                if (itemResult.collected) {
+                    if (itemResult.collected === 'hp') {
+                        actions.setHP(gs.hp + 1);
+                    } else {
+                        actions.activatePowerup(itemResult.collected, 30000);
+                    }
+                    actions.addScore(50);
+                }
+
                 gs.cameraX = Math.max(gs.cameraX, p.pos.x - 400);
             }
 
@@ -284,6 +296,9 @@ export const GameCanvas: React.FC = () => {
 
             // Bullets
             drawBullets(ctx, gs.bullets);
+
+            // Ground items (popped from ? blocks)
+            drawGroundItems(ctx, gs.groundItems);
 
             // Player
             const p = gs.player;
