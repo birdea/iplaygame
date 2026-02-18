@@ -7,7 +7,11 @@ export interface GameState {
   stage: number;
   score: number;
   hp: number;
-  
+  powerups: {
+    bigBullet: number; // timestamp until expiration
+    fastRun: number;   // timestamp until expiration
+  };
+
   // Actions
   setScreen: (screen: 'menu' | 'settings' | 'game' | 'gameover' | 'victory') => void;
   addFace: (face: string) => void;
@@ -16,6 +20,7 @@ export interface GameState {
   nextStage: () => void;
   setHP: (hp: number) => void;
   addScore: (points: number) => void;
+  activatePowerup: (type: 'bigBullet' | 'fastRun', duration: number) => void;
 }
 
 export const useGameStore = create<GameState>((set) => ({
@@ -25,9 +30,13 @@ export const useGameStore = create<GameState>((set) => ({
   stage: 1,
   score: 0,
   hp: 3,
+  powerups: {
+    bigBullet: 0,
+    fastRun: 0,
+  },
 
   setScreen: (screen) => set({ screen }),
-  
+
   addFace: (face) => set((state) => {
     if (state.faces.length >= 10) {
       const newFaces = [...state.faces.slice(1), face];
@@ -38,11 +47,24 @@ export const useGameStore = create<GameState>((set) => ({
 
   selectFace: (index) => set({ selectedFaceIndex: index }),
 
-  resetGame: () => set({ stage: 1, score: 0, hp: 3, screen: 'game' }),
+  resetGame: () => set({
+    stage: 1,
+    score: 0,
+    hp: 3,
+    screen: 'game',
+    powerups: { bigBullet: 0, fastRun: 0 }
+  }),
 
   nextStage: () => set((state) => ({ stage: Math.min(state.stage + 1, 3) })),
 
   setHP: (hp) => set({ hp }),
 
   addScore: (points) => set((state) => ({ score: state.score + points })),
+
+  activatePowerup: (type, duration) => set((state) => ({
+    powerups: {
+      ...state.powerups,
+      [type]: Date.now() + duration
+    }
+  })),
 }));

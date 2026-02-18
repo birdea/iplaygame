@@ -9,8 +9,10 @@ export interface Entity {
     vel: Vector2D;
     width: number;
     height: number;
-    type: 'player' | 'monster' | 'boss' | 'bullet' | 'block' | 'item';
+    type: 'player' | 'monster' | 'boss' | 'bullet' | 'block' | 'item' | 'boss-bullet' | 'boss-punch';
     hp?: number;
+    maxHP?: number;
+    damage?: number;
 }
 
 export interface Block extends Entity {
