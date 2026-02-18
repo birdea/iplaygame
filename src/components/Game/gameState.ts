@@ -31,6 +31,11 @@ export interface GameLoopState {
     lastEscTime: number;
     lastSwingTime: number; // Club swing animation
     lastShieldTime: number;
+    lastMegaSwingTime: number; // Mega flail throw
+
+    // Skill Charging
+    aChargeStart: number;
+    aCharged: boolean;
 
     // Game flow
     gameActive: boolean;
@@ -72,6 +77,9 @@ export function createInitialGameState(stage: number = 1): GameLoopState {
         lastEscTime: 0,
         lastSwingTime: 0,
         lastShieldTime: 0,
+        lastMegaSwingTime: 0,
+        aChargeStart: 0,
+        aCharged: false,
         gameActive: true,
         hp: 3,
         score: 0,

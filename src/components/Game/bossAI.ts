@@ -52,6 +52,7 @@ export function updateBoss(
     time: number,
     stage: number,
     gameActive: { current: boolean },
+    cameraX: number,
     spawnBullet: (bullet: Entity) => void,
 ): void {
     // --- Hover above tiles ---
@@ -76,8 +77,9 @@ export function updateBoss(
     const now = time;
 
     // Change direction on cooldown or when hitting arena boundaries
-    const arenaLeft = BOSS_TRIGGER_X + 50;
-    const arenaRight = BOSS_TRIGGER_X + 1200 - boss.width;
+    // Boss should not enter left 25% of the screen (1000px * 0.25 = 250px)
+    const arenaLeft = cameraX + 250;
+    const arenaRight = cameraX + 950 - boss.width;
 
     if (
         now - tactics.lastDirChangeTime > tactics.dirChangeCooldown ||
@@ -119,18 +121,29 @@ export function updateBoss(
         tactics.lastAttackTime = time;
         tactics.attackDuration = 1000;
 
-        for (let i = 0; i < 3; i++) {
+        // Difficulty scales with stage: 
+        // Stage 1: 1-3 bullets
+        // Each stage increases max count by 1.5x up to 10
+        const maxBullets = Math.min(10, Math.floor(3 * Math.pow(1.5, stage - 1)));
+        const bulletCount = Math.floor(Math.random() * maxBullets) + 1;
+        for (let i = 0; i < bulletCount; i++) {
             setTimeout(() => {
                 if (!gameActive.current) return;
+                // Spread index around 0 for fan pattern
+                const spreadIdx = i - (bulletCount / 2);
                 spawnBullet({
                     id: `boss-fire-${Date.now()}-${i}`,
-                    pos: { x: boss.pos.x, y: boss.pos.y + boss.height * 0.4 + i * 20 },
-                    vel: { x: -6 - Math.random() * 2, y: (Math.random() - 0.5) * 2 },
+                    pos: { x: boss.pos.x, y: boss.pos.y + boss.height * 0.4 + spreadIdx * 10 },
+                    // Shoot in a wider fan pattern (various angles)
+                    vel: {
+                        x: -7 - Math.random() * 3,
+                        y: spreadIdx * 2.5 + (Math.random() - 0.5) * 4
+                    },
                     width: 30,
                     height: 30,
                     type: 'boss-bullet',
                 });
-            }, i * 300);
+            }, i * 150);
         }
     }
 

@@ -1,13 +1,32 @@
 import type { Entity, Block } from '../../types';
 import { GRAVITY } from '../../constants';
 
-/** AABB overlap check between two entities */
-export function aabbOverlap(a: Entity, b: Entity): boolean {
+/** AABB overlap check between two entities with optional scaling ratio */
+export function aabbOverlap(a: Entity, b: Entity, ratio: number = 1.0): boolean {
+    if (ratio === 1.0) {
+        return (
+            a.pos.x < b.pos.x + b.width &&
+            a.pos.x + a.width > b.pos.x &&
+            a.pos.y < b.pos.y + b.height &&
+            a.pos.y + a.height > b.pos.y
+        );
+    }
+
+    const wa = a.width * ratio;
+    const ha = a.height * ratio;
+    const xa = a.pos.x + (a.width - wa) / 2;
+    const ya = a.pos.y + (a.height - ha) / 2;
+
+    const wb = b.width * ratio;
+    const hb = b.height * ratio;
+    const xb = b.pos.x + (b.width - wb) / 2;
+    const yb = b.pos.y + (b.height - hb) / 2;
+
     return (
-        a.pos.x < b.pos.x + b.width &&
-        a.pos.x + a.width > b.pos.x &&
-        a.pos.y < b.pos.y + b.height &&
-        a.pos.y + a.height > b.pos.y
+        xa < xb + wb &&
+        xa + wa > xb &&
+        ya < yb + hb &&
+        ya + ha > yb
     );
 }
 

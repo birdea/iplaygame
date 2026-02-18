@@ -4,9 +4,63 @@ import { Menu } from './components/UI/Menu';
 import { Settings } from './components/UI/Settings';
 import { GameCanvas } from './components/Game/GameCanvas';
 import { motion, AnimatePresence } from 'framer-motion';
+import confetti from 'canvas-confetti';
+
+const VictoryView: React.FC = () => {
+  const { stage, nextStage, setScreen } = useGameStore();
+
+  useEffect(() => {
+    const end = Date.now() + 3000;
+    const frame = () => {
+      confetti({
+        particleCount: 2,
+        angle: 60,
+        spread: 55,
+        origin: { x: 0 },
+        colors: ['#bb0000', '#ffffff']
+      });
+      confetti({
+        particleCount: 2,
+        angle: 120,
+        spread: 55,
+        origin: { x: 1 },
+        colors: ['#bb0000', '#ffffff']
+      });
+      if (Date.now() < end) requestAnimationFrame(frame);
+    };
+    frame();
+  }, []);
+
+  return (
+    <motion.div
+      key="victory"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="w-full h-full flex flex-col items-center justify-center gap-6 md:gap-8 bg-black/80"
+    >
+      <h2 className="responsive-header font-black text-accent">VICTORY!</h2>
+      <p className="text-xl md:text-2xl text-white/80">Stage {stage} Cleared!</p>
+      {stage < 3 ? (
+        <button
+          onClick={() => { nextStage(); setScreen('game'); }}
+          className="btn-primary text-xl md:text-2xl px-8 md:px-12 py-4 md:py-6"
+        >
+          NEXT STAGE
+        </button>
+      ) : (
+        <div className="flex flex-col items-center gap-4">
+          <p className="text-2xl md:text-4xl text-white">All Stages Conquered!</p>
+          <button onClick={() => setScreen('menu')} className="btn-primary">
+            MAIN MENU
+          </button>
+        </div>
+      )}
+    </motion.div>
+  );
+};
 
 const App: React.FC = () => {
-  const { screen, setScreen, resetGame, nextStage, stage } = useGameStore();
+  const { screen, setScreen, resetGame } = useGameStore();
 
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
@@ -107,30 +161,7 @@ const App: React.FC = () => {
           )}
 
           {screen === 'victory' && (
-            <motion.div
-              key="victory"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="w-full h-full flex flex-col items-center justify-center gap-6 md:gap-8 bg-black/80"
-            >
-              <h2 className="responsive-header font-black text-accent">VICTORY!</h2>
-              <p className="text-xl md:text-2xl text-white/80">Stage {stage} Cleared!</p>
-              {stage < 3 ? (
-                <button
-                  onClick={() => { nextStage(); setScreen('game'); }}
-                  className="btn-primary text-xl md:text-2xl px-8 md:px-12 py-4 md:py-6"
-                >
-                  NEXT STAGE
-                </button>
-              ) : (
-                <div className="flex flex-col items-center gap-4">
-                  <p className="text-2xl md:text-4xl text-white">All Stages Conquered!</p>
-                  <button onClick={() => setScreen('menu')} className="btn-primary">
-                    MAIN MENU
-                  </button>
-                </div>
-              )}
-            </motion.div>
+            <VictoryView />
           )}
         </AnimatePresence>
       </div>

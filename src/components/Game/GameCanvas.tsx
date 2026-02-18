@@ -2,9 +2,9 @@ import React, { useEffect, useRef } from 'react';
 import { useGameStore } from '../../store/useGameStore';
 import { useInputs } from '../../hooks/useInputs';
 import {
-    MOVE_SPEED, JUMP_FORCE, BOSS_TRIGGER_X, AUTO_SCROLL_SPEED,
+    MOVE_SPEED, JUMP_FORCE, BOSS_TRIGGER_X, AUTO_SCROLL_SPEED, CLUB_RANGE,
 } from '../../constants';
-import type { Block, Monster } from '../../types';
+import type { Block, Monster, Entity } from '../../types';
 import confetti from 'canvas-confetti';
 import { MobileControls } from '../UI/MobileControls';
 import { Pause } from 'lucide-react';
@@ -66,6 +66,7 @@ export const GameCanvas: React.FC = () => {
                 powerups: g.powerups,
                 isPaused: g.isPaused,
                 stage: g.stage,
+                aCharged: g.aCharged,
             });
         };
         actionsRef.current = createGameActions(gs, syncFn);
@@ -135,17 +136,34 @@ export const GameCanvas: React.FC = () => {
                 // Input handling
                 p.vel.x = 0;
                 if (keys.current['ArrowLeft']) p.vel.x = -MOVE_SPEED * speedMult;
-                if (keys.current['ArrowRight'] || keys.current['KeyD']) p.vel.x = MOVE_SPEED * speedMult;
+                if (keys.current['ArrowRight']) p.vel.x = MOVE_SPEED * speedMult;
 
                 if ((keys.current['ArrowUp'] || keys.current['KeyW']) && gs.onGround) {
                     p.vel.y = JUMP_FORCE;
                     gs.onGround = false;
                 }
 
-                // Action Inputs
-                // A key: Swing Club
-                if (keys.current['KeyA'] && time - gs.lastSwingTime > 400) {
-                    gs.lastSwingTime = time;
+                // A key: Swing Club or Charge Mega Swing
+                const CHARGE_DURATION = 3000;
+                if (keys.current['KeyA']) {
+                    if (gs.aChargeStart === 0) {
+                        gs.aChargeStart = time;
+                    } else if (time - gs.aChargeStart >= CHARGE_DURATION) {
+                        gs.aCharged = true;
+                    }
+                } else {
+                    if (gs.aCharged) {
+                        // RELEASE MEGA SWING
+                        gs.lastMegaSwingTime = time;
+                        gs.aCharged = false;
+                    } else if (gs.aChargeStart !== 0) {
+                        // Normal swing if released before full charge
+                        if (time - gs.lastSwingTime > 400) {
+                            gs.lastSwingTime = time;
+                        }
+                    }
+                    gs.aChargeStart = 0;
+                    gs.aCharged = false;
                 }
 
                 // S key: Shoot Bullet
@@ -241,21 +259,32 @@ export const GameCanvas: React.FC = () => {
                 // Monster logic
                 spawnContinuousMonster(gs.entities, gs.cameraX, gs.stage, time, lastMonsterSpawnTime);
 
-                gs.entities = updateMonsters(
+                const isMegaSwing = (time - gs.lastMegaSwingTime) < 600;
+                const effectiveRange = isMegaSwing ? CLUB_RANGE * 2 : CLUB_RANGE;
+
+                const monsterResult = updateMonsters(
                     gs.entities, p, (amt) => actions.takeDamage(amt),
                     (amt) => actions.addScore(amt),
-                    time, gs.lastSwingTime, gs.effects, gs.cameraX,
+                    time, isMegaSwing ? gs.lastMegaSwingTime : gs.lastSwingTime,
+                    gs.effects, gs.cameraX, effectiveRange, isMegaSwing ? 4 : 1
                 );
+                gs.entities = monsterResult.entities;
+                if (monsterResult.scoreGained > 0) actions.addScore(monsterResult.scoreGained);
+                if (monsterResult.bossDefeated) {
+                    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                    gs.gameActive = false;
+                    setScreen('victory');
+                }
 
                 // Boss AI
                 const boss = gs.entities.find(e => e.type === 'boss');
                 if (boss) {
                     updateBoss(
-                        boss, p, gs.bossTactics, time, gs.stage, gameActiveRef,
-                        (bullet) => { gs.bullets.push(bullet); },
+                        boss, p, gs.bossTactics, time, gs.stage, gameActiveRef, gs.cameraX,
+                        (bullet: Entity) => { gs.bullets.push(bullet); },
                     );
-                    // Boss-player collision
-                    if (aabbOverlap(p, boss)) {
+                    // Boss-player collision (using 0.7 ratio for fairer hitbox)
+                    if (aabbOverlap(p, boss, 0.7)) {
                         if (actions.takeDamage(1)) p.pos.x -= 200;
                     }
                 }
@@ -335,7 +364,7 @@ export const GameCanvas: React.FC = () => {
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 3;
             ctx.shadowOffsetY = 3;
-            drawPlayer(ctx, p, time, isMoving, faceImage.current, Date.now() < gs.invincibleUntil, gs.powerups, gs.lastSwingTime, gs.shieldUntil);
+            drawPlayer(ctx, p, time, isMoving, faceImage.current, Date.now() < gs.invincibleUntil, gs.powerups, gs.lastSwingTime, gs.shieldUntil, gs.aCharged, gs.lastMegaSwingTime);
             ctx.restore();
 
             ctx.restore();

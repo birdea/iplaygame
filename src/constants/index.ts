@@ -9,8 +9,8 @@ export const BULLET_SPEED = 10;
 
 export const PLAYER_WIDTH = 50;
 export const PLAYER_HEIGHT = 80; // Tall Mario-like height
-export const CLUB_LENGTH = 44; // Doubled from 22
-export const CLUB_RANGE = 100; // Effective hit range (doubled from implied baseline)
+export const CLUB_LENGTH = 106; // Reduced to 60% of 176
+export const CLUB_RANGE = 240; // Reduced to 60% of 400
 export const BOSS_SIZE = 400; // Roughly 7-8x player width, fits in canvas height
 export const MINIMAP_SCALE = 0.15;
 export const MINIMAP_WIDTH = 150;

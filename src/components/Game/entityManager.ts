@@ -1,5 +1,5 @@
 import type { Entity, GroundItem, Effect } from '../../types';
-import { BULLET_SPEED, GRAVITY, CLUB_RANGE } from '../../constants';
+import { BULLET_SPEED, GRAVITY } from '../../constants';
 import { aabbOverlap } from './physics';
 import { createMonster } from './stageGenerator';
 
@@ -126,6 +126,12 @@ function spawnSparks(effects: Effect[], x: number, y: number, color: string = '#
     }
 }
 
+export interface MonsterUpdateResult {
+    entities: Entity[];
+    bossDefeated: boolean;
+    scoreGained: number;
+}
+
 /** Move all monsters and check monster-player collisions */
 export function updateMonsters(
     entities: Entity[],
@@ -136,54 +142,88 @@ export function updateMonsters(
     lastSwingTime: number = 0,
     effects: Effect[] = [],
     cameraX: number = 0,
-): Entity[] {
+    CLUB_RANGE: number = 100,
+    damage: number = 1,
+): MonsterUpdateResult {
     const toRemove = new Set<string>();
     const isSwinging = (time - lastSwingTime) < 500;
+    let bossDefeated = false;
+    let scoreGainedTotal = 0;
 
     for (const e of entities) {
-        if (e.type !== 'monster') continue;
+        if (e.type !== 'monster' && e.type !== 'boss') continue;
 
-        // Remove if far off screen (left)
-        if (e.pos.x < cameraX - 200) {
-            toRemove.add(e.id);
-            continue;
+        if (e.type === 'monster') {
+            // Remove if far off screen (left)
+            if (e.pos.x < cameraX - 200) {
+                toRemove.add(e.id);
+                continue;
+            }
+            e.pos.x += e.vel.x;
         }
 
-        e.pos.x += e.vel.x;
-
-        // 1. Club Attack check
+        // 1. Club/Flail Attack check
         if (isSwinging) {
-            const dx = Math.abs((player.pos.x + player.width / 2) - (e.pos.x + e.width / 2));
-            const dy = Math.abs((player.pos.y + player.height / 2) - (e.pos.y + e.height / 2));
+            const playerCX = player.pos.x + player.width / 2;
+            const playerCY = player.pos.y + 30; // Attack center (top/shoulder area)
+            const monsterCX = e.pos.x + e.width / 2;
+            const monsterCY = e.pos.y + e.height / 2;
+
+            // Point-to-Rectangle distance: 
+            // Calculate distance from player's attack center to the nearest point on the monster's hitbox
+            const dx = Math.abs(playerCX - monsterCX) - e.width / 2;
+            const dy = Math.abs(playerCY - monsterCY) - e.height / 2;
+            const distance = Math.sqrt(Math.max(0, dx) ** 2 + Math.max(0, dy) ** 2);
 
             // Use e.lastHitBySwing to prevent multi-hits in one swing
-            if (dx < CLUB_RANGE && dy < player.height && e.lastHitBySwing !== lastSwingTime) {
+            if (distance < CLUB_RANGE && e.lastHitBySwing !== lastSwingTime) {
                 e.lastHitBySwing = lastSwingTime;
-                e.hp = (e.hp || 1) - 1;
-                spawnSparks(effects, e.pos.x + e.width / 2, e.pos.y + e.height / 2, '#FF5722');
+                e.hp = (e.hp || 1) - damage;
+                spawnSparks(effects, e.pos.x + e.width / 2, e.pos.y + e.height / 2, e.type === 'boss' ? '#FFEB3B' : '#FF5722');
+
                 if (e.hp <= 0) {
                     toRemove.add(e.id);
-                    addScore(300);
+                    if (e.type === 'monster') {
+                        scoreGainedTotal += 300;
+                    } else if (e.type === 'boss') {
+                        scoreGainedTotal += 5000;
+                        bossDefeated = true;
+                    }
                 }
-                continue;
+                if (e.type === 'monster') continue; // Only for monsters, boss stays
             }
         }
 
-        if (!aabbOverlap(player, e)) continue;
+        if (e.type === 'boss') continue; // Boss doesn't do stomp/damage here, handled in GameCanvas
 
-        // 2. Stomp from above
-        if (player.vel.y > 0 && player.pos.y + player.height - player.vel.y <= e.pos.y + 10) {
-            toRemove.add(e.id);
+        // 2. Stomp from above (Check this WITHOUT the 0.8 ratio for easier stomping)
+        const isCurrentlyOverlapping = aabbOverlap(player, e);
+        if (isCurrentlyOverlapping && player.vel.y > 0 && player.pos.y + player.height - player.vel.y <= e.pos.y + 20) {
+            e.hp = (e.hp || 1) - 1;
             player.vel.y = -10;
-            addScore(200);
             spawnSparks(effects, e.pos.x + e.width / 2, e.pos.y + e.height / 2, '#4CAF50');
-        } else {
+            if (e.hp <= 0) {
+                toRemove.add(e.id);
+                addScore(200);
+            }
+            continue; // Successfully stomped, don't take damage
+        }
+
+        // 3. Normal Collision (Take damage) - Use 0.8 ratio for fairer hits
+        if (isCurrentlyOverlapping && aabbOverlap(player, e, 0.8)) {
             if (takeDamage(1)) player.pos.x -= 100;
         }
     }
 
-    if (toRemove.size === 0) return entities;
-    return entities.filter(e => !toRemove.has(e.id));
+    const resultEntities = toRemove.size === 0
+        ? entities
+        : entities.filter(e => !toRemove.has(e.id));
+
+    return {
+        entities: resultEntities,
+        bossDefeated,
+        scoreGained: scoreGainedTotal
+    };
 }
 
 export interface BulletCollisionResult {
@@ -239,7 +279,7 @@ export function updateBullets(
                 }
             }
         } else if (b.type === 'boss-bullet') {
-            if (aabbOverlap(b, player)) {
+            if (aabbOverlap(b, player, 0.8)) {
                 if (takeDamage(1)) {
                     bulletsToRemove.add(b.id);
                     player.pos.x -= 50;
