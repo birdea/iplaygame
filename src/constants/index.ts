@@ -11,6 +11,8 @@ export const PLAYER_WIDTH = 50;
 export const PLAYER_HEIGHT = 80; // Tall Mario-like height
 export const BOSS_SIZE = 400; // Roughly 7-8x player width, fits in canvas height
 export const MINIMAP_SCALE = 0.15;
+export const MINIMAP_WIDTH = 150;
+export const MINIMAP_HEIGHT = 90;
 
 export const COLORS = {
     SKY: '#87CEEB',

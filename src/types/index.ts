@@ -21,6 +21,6 @@ export interface Block extends Entity {
 }
 
 export interface Monster extends Entity {
-    monsterType: 'ground' | 'boss';
+    monsterType: 'ground' | 'skinny' | 'fat' | 'fly' | 'boss';
     direction: number;
 }

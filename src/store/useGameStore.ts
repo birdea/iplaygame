@@ -7,6 +7,7 @@ export interface GameState {
   stage: number;
   score: number;
   hp: number;
+  isPaused: boolean;
   powerups: {
     bigBullet: number; // timestamp until expiration
     fastRun: number;   // timestamp until expiration
@@ -14,6 +15,7 @@ export interface GameState {
 
   // Actions
   setScreen: (screen: 'menu' | 'settings' | 'game' | 'gameover' | 'victory') => void;
+  togglePaused: (paused?: boolean) => void;
   addFace: (face: string) => void;
   selectFace: (index: number) => void;
   resetGame: () => void;
@@ -30,12 +32,17 @@ export const useGameStore = create<GameState>((set) => ({
   stage: 1,
   score: 0,
   hp: 3,
+  isPaused: false,
   powerups: {
     bigBullet: 0,
     fastRun: 0,
   },
 
-  setScreen: (screen) => set({ screen }),
+  setScreen: (screen) => set({ screen, isPaused: false }),
+
+  togglePaused: (paused) => set((state) => ({
+    isPaused: paused !== undefined ? paused : !state.isPaused
+  })),
 
   addFace: (face) => set((state) => {
     if (state.faces.length >= 10) {
@@ -52,6 +59,7 @@ export const useGameStore = create<GameState>((set) => ({
     score: 0,
     hp: 3,
     screen: 'game',
+    isPaused: false,
     powerups: { bigBullet: 0, fastRun: 0 }
   }),
 

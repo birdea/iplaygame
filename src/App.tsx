@@ -8,15 +8,20 @@ import { motion, AnimatePresence } from 'framer-motion';
 const App: React.FC = () => {
   const { screen, setScreen, resetGame, nextStage, stage } = useGameStore();
 
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+
   useEffect(() => {
-    const playlist = ['/bgm_001.m4a', '/bmg_002.m4a', '/bgm_003.m4a'];
+    const playlist = ['/bgm_001.m4a', '/bgm_002.m4a', '/bgm_003.m4a'];
     const randomTrack = playlist[Math.floor(Math.random() * playlist.length)];
     const audio = new Audio(randomTrack);
     audio.loop = true;
     audio.volume = 0.5;
+    audioRef.current = audio;
 
     const playAudio = () => {
-      audio.play().catch(err => console.log("Autoplay blocked, waiting for interaction", err));
+      if (screen !== 'menu') {
+        audio.play().catch(err => console.log("Autoplay blocked, waiting for interaction", err));
+      }
       ['click', 'mousedown', 'keydown', 'touchstart'].forEach(event => {
         window.removeEventListener(event, playAudio);
       });
@@ -32,7 +37,17 @@ const App: React.FC = () => {
         window.removeEventListener(event, playAudio);
       });
     };
-  }, []);
+  }, [screen]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      if (screen === 'menu') {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play().catch(err => console.log("Autoplay blocked", err));
+      }
+    }
+  }, [screen]);
 
   return (
     <div className="h-screen w-screen overflow-hidden relative bg-dark">
