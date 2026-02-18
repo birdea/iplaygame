@@ -2,16 +2,23 @@ import React, { useEffect, useRef, useCallback } from 'react';
 import { useGameStore } from '../../store/useGameStore';
 import { useInputs } from '../../hooks/useInputs';
 import {
-    UNIT_SIZE, STAGE_LENGTH, BOSS_TRIGGER_X, BOSS_SIZE,
-    GRAVITY, JUMP_FORCE, MOVE_SPEED, BULLET_SPEED,
-    PLAYER_WIDTH, PLAYER_HEIGHT, AUTO_SCROLL_SPEED, COLORS,
-    INVINCIBILITY_DURATION
+    MOVE_SPEED, JUMP_FORCE, BOSS_TRIGGER_X, AUTO_SCROLL_SPEED,
+    PLAYER_WIDTH, PLAYER_HEIGHT, INVINCIBILITY_DURATION
 } from '../../constants';
 import type { Entity, Block, Monster } from '../../types';
 import confetti from 'canvas-confetti';
 import { MobileControls } from '../UI/MobileControls';
 import { Pause } from 'lucide-react';
 
+// Extracted modules
+import { applyVerticalPhysics, applyHorizontalPhysics, aabbOverlap } from './physics';
+import { generateStage } from './stageGenerator';
+import { drawBackground, drawBlock, drawDragon, drawPlayer, drawMonster, drawBullets, drawBossHPBar, drawHUD, drawMinimap } from './renderer';
+import { createBossTactics, createBossEntity, updateBoss } from './bossAI';
+import { createBullet, updateMonsters, updateBullets } from './entityManager';
+
+const MINIMAP_WIDTH = 150;
+const MINIMAP_HEIGHT = 90;
 
 export const GameCanvas: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -62,20 +69,13 @@ export const GameCanvas: React.FC = () => {
     const gameActive = useRef(true);
     const bossActive = useRef(false);
     const stageRef = useRef(stage);
-
-    // Boss state
-    const bossTactics = useRef({
-        lastAttackTime: 0,
-        state: 'idle' as 'idle' | 'punch' | 'fire',
-        attackDuration: 0
-    });
+    const bossTactics = useRef(createBossTactics());
 
     useEffect(() => {
         stageRef.current = stage;
     }, [stage]);
 
     const faceImage = useRef<HTMLImageElement | null>(null);
-
     const monsterFaces = useRef<(HTMLImageElement | null)[]>([null, null, null]);
 
     useEffect(() => {
@@ -97,363 +97,15 @@ export const GameCanvas: React.FC = () => {
         });
     }, [faces, selectedFaceIndex]);
 
-    const MINIMAP_WIDTH = 150;
-    const MINIMAP_HEIGHT = 90;
-
-    const nextId = useRef(0);
-    const getUniqueId = (prefix: string) => `${prefix}-${nextId.current++}`;
-
     // Generate Stage
     useEffect(() => {
-        const newEntities: Entity[] = [];
-        nextId.current = 0;
-
-        // Floor with Holes
-        let x = 0;
-        while (x < STAGE_LENGTH) {
-            // Create a hole occasionally (after starting area)
-            if (x > 1000 && x < BOSS_TRIGGER_X - 500 && Math.random() < 0.12) {
-                const holeSize = Math.floor(Math.random() * 2) + 1; // 1 or 2 blocks wide
-                x += holeSize * UNIT_SIZE;
-                continue;
-            }
-
-            newEntities.push({
-                id: getUniqueId('ground'),
-                pos: { x, y: 500 },
-                vel: { x: 0, y: 0 },
-                width: UNIT_SIZE,
-                height: UNIT_SIZE,
-                type: 'block',
-                blockType: 'ground'
-            } as Block);
-            x += UNIT_SIZE;
-        }
-
-        // Difficulty scaling
-        const monsterChance = (0.15 + (stageRef.current - 1) * 0.1) * 2;
-        const monsterSpeed = 2 + (stageRef.current - 1) * 1.5;
-
-        // Monsters and Bricks
-        for (let bx = 500; bx < BOSS_TRIGGER_X - 500; bx += UNIT_SIZE * 2) {
-            if (Math.random() > 0.7) {
-                newEntities.push({
-                    id: getUniqueId('brick'),
-                    pos: { x: bx, y: 300 },
-                    vel: { x: 0, y: 0 },
-                    width: UNIT_SIZE,
-                    height: UNIT_SIZE,
-                    type: 'block',
-                    blockType: Math.random() > 0.5 ? 'question' : 'brick',
-                } as Block);
-            }
-
-            if (Math.random() < monsterChance) {
-                const rand = Math.random();
-                let mType: 'skinny' | 'fat' | 'fly' = 'skinny';
-                let mWidth = UNIT_SIZE;
-                let mHeight = UNIT_SIZE;
-                let mVelX = -monsterSpeed;
-                let mPosY = 450;
-
-                if (rand < 0.33) {
-                    mType = 'skinny';
-                    mWidth = UNIT_SIZE * 0.7;
-                    mHeight = UNIT_SIZE * 0.9;
-                    mVelX = -monsterSpeed * 1.8;
-                } else if (rand < 0.66) {
-                    mType = 'fat';
-                    mWidth = UNIT_SIZE * 1.5;
-                    mHeight = UNIT_SIZE * 1.2;
-                    mVelX = -monsterSpeed * 0.7;
-                    mPosY = 500 - mHeight;
-                } else {
-                    mType = 'fly';
-                    mWidth = UNIT_SIZE;
-                    mHeight = UNIT_SIZE * 0.8;
-                    mVelX = -monsterSpeed * 1.2;
-                    mPosY = 200 + Math.random() * 150;
-                }
-
-                newEntities.push({
-                    id: getUniqueId('monster'),
-                    pos: { x: bx, y: mPosY },
-                    vel: { x: mVelX, y: 0 },
-                    width: mWidth,
-                    height: mHeight,
-                    type: 'monster',
-                    monsterType: mType,
-                    direction: -1
-                } as Monster);
-            }
-        }
-
-        entities.current = newEntities;
+        entities.current = generateStage(stage);
         playerRef.current.pos = { x: 100, y: 300 };
         playerRef.current.vel = { x: 0, y: 0 };
         cameraX.current = 0;
         bossActive.current = false;
         gameActive.current = true;
     }, [stage]);
-
-    // Helper: Draw Dragon (Flipped to face Left)
-    const drawDragon = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, time: number, state: string) => {
-        ctx.save();
-        ctx.translate(x + width / 2, y + height / 2);
-
-        // FLIP: Face Left
-        ctx.scale(-1, 1);
-
-        // Dragon is now larger, adjusted scale
-        const scale = Math.min(width, height) / 300;
-        ctx.scale(scale, scale);
-
-        const bodyColor = state === 'punch' ? '#FF1744' : '#1A237E';
-        const strokeColor = '#FFFFFF';
-        ctx.lineWidth = 5;
-
-        const drawDiamond = (dx: number, dy: number, s: number, angle: number) => {
-            ctx.save();
-            ctx.translate(dx, dy);
-            ctx.rotate(angle);
-            ctx.beginPath();
-            ctx.moveTo(0, -s);
-            ctx.lineTo(s * 0.6, 0);
-            ctx.lineTo(0, s);
-            ctx.lineTo(-s * 0.6, 0);
-            ctx.closePath();
-            ctx.fillStyle = bodyColor;
-            ctx.strokeStyle = strokeColor;
-            ctx.fill();
-            ctx.stroke();
-            ctx.restore();
-        };
-
-        // Back diamond "spikes"
-        for (let i = 0; i < 3; i++) {
-            const offset = Math.sin(time / 200 + i) * 10;
-            drawDiamond(-80 - i * 40, offset - 20, 30, Math.PI / 4);
-            drawDiamond(-80 - i * 40, offset + 60, 30, -Math.PI / 4);
-        }
-
-        // 2. Draw Body (The circular part behind the head)
-        ctx.beginPath();
-        ctx.arc(-60, 20, 50, 0, Math.PI * 2);
-        ctx.fillStyle = bodyColor;
-        ctx.strokeStyle = strokeColor;
-        ctx.fill();
-        ctx.stroke();
-
-        // 3. Draw Head (The Pac-man like part with mouth)
-        ctx.save();
-        const mouthOpen = Math.abs(Math.sin(time / 300)) * 0.5 + 0.2;
-        ctx.beginPath();
-        // Drawing a modified circle with a mouth gap
-        ctx.arc(40, 0, 80, mouthOpen, Math.PI * 2 - mouthOpen);
-        ctx.lineTo(40, 0);
-        ctx.closePath();
-        ctx.fillStyle = bodyColor;
-        ctx.strokeStyle = strokeColor;
-        ctx.fill();
-        ctx.stroke();
-
-        // Eye
-        ctx.fillStyle = (state === 'fire' || state === 'punch') ? 'yellow' : 'white';
-        ctx.beginPath();
-        ctx.ellipse(60, -30, 20, 10, Math.PI / 6, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = 'black';
-        ctx.beginPath();
-        ctx.arc(70, -35, 5, 0, Math.PI * 2);
-        ctx.fill();
-
-        // 4. Fire Breath
-        if (state === 'fire') {
-            ctx.save();
-            ctx.translate(100, 0);
-            ctx.fillStyle = '#FFEB3B'; // Bright flame
-            for (let i = 0; i < 5; i++) {
-                const fx = Math.random() * 60;
-                const fy = (Math.random() - 0.5) * 50;
-                ctx.beginPath();
-                ctx.arc(fx, fy, 15 + Math.random() * 10, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            ctx.restore();
-        }
-
-        ctx.restore();
-        ctx.restore();
-    }, []);
-
-    // Helper: Draw SMB3 Style Background
-    const drawBackground = (ctx: CanvasRenderingContext2D, cameraX: number, time: number) => {
-        const width = 1000;
-        const height = 600;
-
-        // 1. Sky
-        ctx.fillStyle = COLORS.SKY;
-        ctx.fillRect(0, 0, width, height);
-
-        // 2. Clouds (Far Parallax - 10% speed)
-        const cloudX = -(cameraX * 0.1) % 400;
-        ctx.fillStyle = 'rgba(255,255,255,0.8)';
-        for (let i = -1; i < 4; i++) {
-            const cx = cloudX + i * 400 + 50;
-            const cy = 100 + Math.sin(time / 2000 + i) * 20;
-            ctx.beginPath();
-            ctx.arc(cx, cy, 30, 0, Math.PI * 2);
-            ctx.arc(cx + 40, cy, 40, 0, Math.PI * 2);
-            ctx.arc(cx + 80, cy, 30, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        // 3. Hills (Near Parallax - 30% speed)
-        const hillX = -(cameraX * 0.3) % 800;
-        ctx.fillStyle = '#228B22'; // Forest Green
-        ctx.strokeStyle = '#004d00';
-        ctx.lineWidth = 4;
-        for (let i = -1; i < 3; i++) {
-            const hx = hillX + i * 800;
-            ctx.beginPath();
-            ctx.moveTo(hx, 500);
-            ctx.quadraticCurveTo(hx + 200, 200, hx + 400, 500);
-            ctx.fill();
-            ctx.stroke();
-
-            ctx.save();
-            ctx.fillStyle = '#32CD32'; // Lime Green
-            const hx2 = hillX + i * 800 + 400;
-            ctx.beginPath();
-            ctx.moveTo(hx2, 500);
-            ctx.quadraticCurveTo(hx2 + 150, 300, hx2 + 300, 500);
-            ctx.fill();
-            ctx.stroke();
-            ctx.restore();
-        }
-    };
-
-    // Helper: Draw SMB3 style Block
-    const drawBlock = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, type: 'ground' | 'brick' | 'question') => {
-        ctx.save();
-        ctx.translate(x, y);
-
-        if (type === 'ground') {
-            ctx.fillStyle = COLORS.GROUND;
-            ctx.fillRect(0, 0, w, h);
-            ctx.strokeStyle = '#3E2723';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(2, 2, w - 4, h - 4);
-            ctx.fillStyle = '#3E2723';
-            const dotSize = 4;
-            ctx.fillRect(8, 8, dotSize, dotSize);
-            ctx.fillRect(w - 12, 8, dotSize, dotSize);
-            ctx.fillRect(8, h - 12, dotSize, dotSize);
-            ctx.fillRect(w - 12, h - 12, dotSize, dotSize);
-        } else if (type === 'brick') {
-            ctx.fillStyle = COLORS.BRICK;
-            ctx.fillRect(0, 0, w, h);
-            ctx.strokeStyle = '#3E2723';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(1, 1, w - 2, h - 2);
-            ctx.beginPath();
-            ctx.moveTo(1, h / 2); ctx.lineTo(w - 1, h / 2);
-            ctx.moveTo(w / 2, 1); ctx.lineTo(w / 2, h / 2);
-            ctx.moveTo(w / 4, h / 2); ctx.lineTo(w / 4, h - 1);
-            ctx.moveTo(3 * w / 4, h / 2); ctx.lineTo(3 * w / 4, h - 1);
-            ctx.stroke();
-        } else if (type === 'question') {
-            ctx.fillStyle = COLORS.QUESTION;
-            ctx.fillRect(0, 0, w, h);
-            ctx.strokeStyle = '#3E2723';
-            ctx.lineWidth = 3;
-            ctx.strokeRect(2, 2, w - 4, h - 4);
-            ctx.fillStyle = '#3E2723';
-            ctx.font = 'bold 36px Courier';
-            ctx.textAlign = 'center';
-            ctx.fillText('?', w / 2, h / 2 + 12);
-            ctx.fillRect(4, 4, 3, 3); ctx.fillRect(w - 7, 4, 3, 3);
-            ctx.fillRect(4, h - 7, 3, 3); ctx.fillRect(w - 7, h - 7, 3, 3);
-        }
-
-        ctx.restore();
-    };
-
-    // Helper: Draw Player with Arms and Legs
-    const drawPlayer = useCallback((ctx: CanvasRenderingContext2D, p: Entity, time: number, isMoving: boolean, faceImg: HTMLImageElement | null) => {
-        const { pos } = p;
-
-        // 1. Walking Animation Factor
-        const walkCycle = isMoving ? Math.sin(time / 100) : 0;
-        const armCycle = isMoving ? Math.sin(time / 100 + Math.PI) : 0;
-
-        // Invincibility Blinking
-        const isInvincible = Date.now() < invincibleUntil.current;
-        if (isInvincible && Math.floor(time / 100) % 2 === 0) return;
-
-        ctx.save();
-        ctx.translate(pos.x, pos.y);
-
-        // Body Color (Active Powerup check)
-        const isBigBullet = statsRef.current.powerups.bigBullet > Date.now();
-        const bodyColor = isBigBullet ? '#F44336' : '#D32F2F';
-
-        // 2. Draw Legs
-        ctx.strokeStyle = '#333';
-        ctx.lineWidth = 10;
-        ctx.lineCap = 'round';
-
-        // Left Leg
-        ctx.save();
-        ctx.translate(15, 60);
-        ctx.rotate(walkCycle * 0.5);
-        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 20); ctx.stroke();
-        ctx.restore();
-
-        // Right Leg
-        ctx.save();
-        ctx.translate(35, 60);
-        ctx.rotate(-walkCycle * 0.5);
-        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 20); ctx.stroke();
-        ctx.restore();
-
-        // 3. Draw Body
-        ctx.fillStyle = bodyColor;
-        ctx.fillRect(0, 30, 50, 40);
-
-        // 4. Draw Arms
-        ctx.lineWidth = 8;
-        // Left Arm
-        ctx.save();
-        ctx.translate(5, 40);
-        ctx.rotate(armCycle * 0.5);
-        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-15, 15); ctx.stroke();
-        ctx.restore();
-
-        // Right Arm
-        ctx.save();
-        ctx.translate(45, 40);
-        ctx.rotate(-armCycle * 0.5);
-        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(15, 15); ctx.stroke();
-        ctx.restore();
-
-        // 5. Draw Head
-        if (faceImg) {
-            ctx.save();
-            ctx.beginPath(); ctx.arc(25, 25, 25, 0, Math.PI * 2); ctx.clip();
-            ctx.drawImage(faceImg, 0, 0, 50, 50);
-            ctx.restore();
-            // Head border
-            ctx.strokeStyle = '#FFCCBC';
-            ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.arc(25, 25, 25, 0, Math.PI * 2); ctx.stroke();
-        } else {
-            ctx.fillStyle = '#FFCCBC';
-            ctx.beginPath(); ctx.arc(25, 25, 25, 0, Math.PI * 2); ctx.fill();
-        }
-
-        ctx.restore();
-    }, []);
 
     // Game Loop - Ref-based for perfect stability (no restarts)
     const loopRef = useRef<(time: number) => void>(null);
@@ -479,8 +131,9 @@ export const GameCanvas: React.FC = () => {
                 // -- 1. LOGIC UPDATES --
                 cameraX.current += AUTO_SCROLL_SPEED;
                 const speedMult = statsRef.current.powerups.fastRun > Date.now() ? 1.6 : 1;
-
                 const p = playerRef.current;
+
+                // Input handling
                 p.vel.x = 0;
                 if (keys.current['ArrowLeft'] || keys.current['KeyA']) p.vel.x = -MOVE_SPEED * speedMult;
                 if (keys.current['ArrowRight'] || keys.current['KeyD']) p.vel.x = MOVE_SPEED * speedMult;
@@ -493,52 +146,24 @@ export const GameCanvas: React.FC = () => {
                 // Shoot
                 if (keys.current['KeyS'] && time - lastShootTime.current > 300) {
                     const isBig = statsRef.current.powerups.bigBullet > Date.now();
-                    bullets.current.push({
-                        id: `bullet-${Date.now()}-${Math.random()}`,
-                        pos: { x: p.pos.x + p.width, y: p.pos.y + 20 },
-                        vel: { x: BULLET_SPEED * (isBig ? 1.2 : 1), y: 0 },
-                        width: isBig ? 30 : 12, height: isBig ? 30 : 12,
-                        type: 'bullet', damage: isBig ? 2 : 1
-                    });
+                    bullets.current.push(createBullet(p, isBig));
                     lastShootTime.current = time;
                 }
 
-                // Vertical Move
-                p.vel.y += GRAVITY;
-                p.pos.y += p.vel.y;
+                // Physics
+                const vertResult = applyVerticalPhysics(p, entities.current);
+                onGround.current = vertResult.onGround;
 
-                // Vertical Collisions
-                onGround.current = false;
-                entities.current.forEach(e => {
-                    if (e.type === 'block') {
-                        if (p.pos.x < e.pos.x + e.width && p.pos.x + p.width > e.pos.x &&
-                            p.pos.y < e.pos.y + e.height && p.pos.y + p.height > e.pos.y) {
-                            if (p.vel.y > 0 && p.pos.y + p.height - p.vel.y <= e.pos.y + 10) {
-                                p.pos.y = e.pos.y - p.height; p.vel.y = 0; onGround.current = true;
-                            } else if (p.vel.y < 0 && p.pos.y - p.vel.y >= e.pos.y + e.height - 10) {
-                                p.pos.y = e.pos.y + e.height; p.vel.y = 0;
-                                if ((e as Block).blockType === 'question') {
-                                    (e as Block).blockType = 'brick';
-                                    const rand = Math.random();
-                                    if (rand < 0.25) actionsRef.current.activatePowerup('bigBullet', 30000);
-                                    else if (rand < 0.5) actionsRef.current.activatePowerup('fastRun', 30000);
-                                    else if (rand < 0.75) actionsRef.current.setHP(statsRef.current.hp + 1);
-                                    actionsRef.current.addScore(100);
-                                }
-                            }
-                        }
-                    }
-                });
+                if (vertResult.hitQuestion) {
+                    vertResult.hitQuestion.blockType = 'brick';
+                    const rand = Math.random();
+                    if (rand < 0.25) actionsRef.current.activatePowerup('bigBullet', 30000);
+                    else if (rand < 0.5) actionsRef.current.activatePowerup('fastRun', 30000);
+                    else if (rand < 0.75) actionsRef.current.setHP(statsRef.current.hp + 1);
+                    actionsRef.current.addScore(100);
+                }
 
-                // Horizontal Move
-                p.pos.x += p.vel.x;
-                entities.current.forEach(e => {
-                    if (e.type === 'block' && p.pos.x < e.pos.x + e.width && p.pos.x + p.width > e.pos.x &&
-                        p.pos.y < e.pos.y + e.height && p.pos.y + p.height > e.pos.y) {
-                        if (p.vel.x > 0) p.pos.x = e.pos.x - p.width;
-                        else if (p.vel.x < 0) p.pos.x = e.pos.x + e.width;
-                    }
-                });
+                applyHorizontalPhysics(p, entities.current);
 
                 // Fall Death
                 if (p.pos.y > 600) {
@@ -549,217 +174,105 @@ export const GameCanvas: React.FC = () => {
                     p.vel = { x: 0, y: 0 };
                 }
 
+                // Camera boundary
                 if (p.pos.x < cameraX.current) p.pos.x = cameraX.current;
+
+                // Boss trigger
                 if (p.pos.x > BOSS_TRIGGER_X && !bossActive.current) {
                     bossActive.current = true;
-                    entities.current.push({
-                        id: 'boss', pos: { x: BOSS_TRIGGER_X + 600, y: 100 },
-                        vel: { x: -2, y: 0 }, width: BOSS_SIZE, height: BOSS_SIZE,
-                        type: 'boss', hp: 50 * stageRef.current, maxHP: 50 * stageRef.current,
-                    } as Entity);
+                    entities.current.push(createBossEntity(stageRef.current));
                 }
 
-                // Monster & Boss Logic
-                entities.current.forEach(e => {
-                    if (e.type === 'monster') {
-                        e.pos.x += e.vel.x;
-                        if (p.pos.x < e.pos.x + e.width && p.pos.x + p.width > e.pos.x &&
-                            p.pos.y < e.pos.y + e.height && p.pos.y + p.height > e.pos.y) {
-                            if (p.vel.y > 0 && p.pos.y + p.height - p.vel.y <= e.pos.y + 10) {
-                                entities.current = entities.current.filter(ent => ent.id !== e.id);
-                                p.vel.y = -10; actionsRef.current.addScore(200);
-                            } else {
-                                if (takeDamage(1)) p.pos.x -= 100;
-                            }
-                        }
-                    } else if (e.type === 'boss') {
-                        e.vel.y += GRAVITY * 0.4; e.pos.y += e.vel.y;
-                        if (e.pos.y + e.height > 500) { e.pos.y = 500 - e.height; e.vel.y = 0; if (Math.random() < 0.02) e.vel.y = -12; }
-                        const dist = e.pos.x - p.pos.x;
-                        if (dist > 300) e.pos.x -= 2; else if (dist < 100) e.pos.x += 2;
-                        const cooldown = 3500 / stageRef.current;
-                        if (time - bossTactics.current.lastAttackTime > cooldown) {
-                            bossTactics.current.state = 'fire'; bossTactics.current.lastAttackTime = time; bossTactics.current.attackDuration = 1000;
-                            for (let i = 0; i < 3; i++) {
-                                setTimeout(() => {
-                                    if (!gameActive.current) return;
-                                    bullets.current.push({
-                                        id: `boss-fire-${Date.now()}-${i}`,
-                                        pos: { x: e.pos.x, y: e.pos.y + e.height * 0.4 + i * 20 },
-                                        vel: { x: -6 - Math.random() * 2, y: (Math.random() - 0.5) * 2 },
-                                        width: 30, height: 30, type: 'boss-bullet'
-                                    });
-                                }, i * 300);
-                            }
-                        }
-                        if (bossTactics.current.attackDuration > 0) {
-                            bossTactics.current.attackDuration -= 16;
-                            if (bossTactics.current.attackDuration <= 0) bossTactics.current.state = 'idle';
-                        }
-                        if (p.pos.x < e.pos.x + e.width && p.pos.x + p.width > e.pos.x &&
-                            p.pos.y < e.pos.y + e.height && p.pos.y + p.height > e.pos.y) {
-                            if (takeDamage(1)) p.pos.x -= 200;
-                        }
-                    }
-                });
+                // Monster logic
+                entities.current = updateMonsters(
+                    entities.current, p, takeDamage,
+                    (amt) => actionsRef.current.addScore(amt),
+                );
 
-                // Bullets Logic
-                bullets.current.forEach(b => {
-                    b.pos.x += b.vel.x; b.pos.y += b.vel.y;
-                    if (b.type === 'bullet') {
-                        const boss = entities.current.find(ent => ent.type === 'boss');
-                        if (boss && b.pos.x < boss.pos.x + boss.width && b.pos.x + b.width > boss.pos.x &&
-                            b.pos.y < boss.pos.y + boss.height && b.pos.y + b.height > boss.pos.y) {
-                            boss.hp = (boss.hp || 0) - (b.damage || 1); bullets.current = bullets.current.filter(bul => bul.id !== b.id);
-                            if (boss.hp <= 0) {
-                                entities.current = entities.current.filter(ent => ent.id !== boss.id);
-                                actionsRef.current.addScore(5000); confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-                                gameActive.current = false; actionsRef.current.setScreen('victory');
-                            }
-                        }
-                        entities.current.forEach(ent => {
-                            if (ent.type === 'monster' && b.pos.x < ent.pos.x + ent.width && b.pos.x + b.width > ent.pos.x &&
-                                b.pos.y < ent.pos.y + ent.height && b.pos.y + b.height > ent.pos.y) {
-                                entities.current = entities.current.filter(e => e.id !== ent.id);
-                                bullets.current = bullets.current.filter(bul => bul.id !== b.id);
-                                actionsRef.current.addScore(200);
-                            }
-                        });
-                    } else if (b.type === 'boss-bullet') {
-                        if (b.pos.x < p.pos.x + p.width && b.pos.x + b.width > p.pos.x &&
-                            b.pos.y < p.pos.y + p.height && b.pos.y + b.height > p.pos.y) {
-                            if (takeDamage(1)) {
-                                bullets.current = bullets.current.filter(bul => bul.id !== b.id);
-                                p.pos.x -= 50;
-                            }
-                        }
+                // Boss AI
+                const boss = entities.current.find(e => e.type === 'boss');
+                if (boss) {
+                    updateBoss(
+                        boss, p, bossTactics.current, time, stageRef.current, gameActive,
+                        (bullet) => { bullets.current.push(bullet); },
+                    );
+                    // Boss-player collision
+                    if (aabbOverlap(p, boss)) {
+                        if (takeDamage(1)) p.pos.x -= 200;
                     }
-                });
-                bullets.current = bullets.current.filter(bul => bul.pos.x > cameraX.current - 100 && bul.pos.x < cameraX.current + 1200);
+                }
+
+                // Bullet collisions
+                const bulletResult = updateBullets(bullets.current, entities.current, p, takeDamage, cameraX.current);
+                entities.current = bulletResult.entities;
+                bullets.current = bulletResult.bullets;
+
+                if (bulletResult.bossDefeated) {
+                    actionsRef.current.addScore(bulletResult.scoreGained);
+                    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                    gameActive.current = false;
+                    actionsRef.current.setScreen('victory');
+                } else if (bulletResult.scoreGained > 0) {
+                    actionsRef.current.addScore(bulletResult.scoreGained);
+                }
+
                 cameraX.current = Math.max(cameraX.current, p.pos.x - 400);
             }
 
             // -- 2. RENDER --
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Draw Parallax Background
             drawBackground(ctx, cameraX.current, time);
 
             ctx.save();
             ctx.translate(-cameraX.current, 0);
 
+            // Entities
             entities.current.forEach(e => {
                 if (e.type === 'block') {
                     drawBlock(ctx, e.pos.x, e.pos.y, e.width, e.height, (e as Block).blockType);
                 } else if (e.type === 'monster') {
                     const m = e as Monster;
                     const mFace = monsterFaces.current[m.monsterType === 'skinny' ? 0 : m.monsterType === 'fat' ? 1 : 2];
-                    ctx.save(); ctx.translate(e.pos.x, e.pos.y);
-
-                    // SMB3 Outline for monsters
-                    ctx.shadowColor = 'black';
-                    ctx.shadowBlur = 0;
-                    ctx.shadowOffsetX = 2;
-                    ctx.shadowOffsetY = 2;
-
-                    const walkCycle = Math.sin(time / 150);
-                    const limbWidth = m.monsterType === 'skinny' ? 4 : (m.monsterType === 'fat' ? 12 : 6);
-                    ctx.strokeStyle = '#333'; ctx.lineWidth = limbWidth; ctx.lineCap = 'round';
-                    if (m.monsterType === 'fly') {
-                        ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.6;
-                        const wingOsc = Math.sin(time / 50) * 20;
-                        ctx.beginPath(); ctx.ellipse(-10, 20, 20, Math.max(0.1, 10 + wingOsc), Math.PI / 4, 0, Math.PI * 2); ctx.fill();
-                        ctx.beginPath(); ctx.ellipse(e.width + 10, 20, 20, Math.max(0.1, 10 + wingOsc), -Math.PI / 4, 0, Math.PI * 2); ctx.fill();
-                        ctx.globalAlpha = 1.0;
-                        ctx.beginPath(); ctx.moveTo(e.width * 0.3, e.height); ctx.lineTo(e.width * 0.3, e.height + 10); ctx.stroke();
-                        ctx.beginPath(); ctx.moveTo(e.width * 0.7, e.height); ctx.lineTo(e.width * 0.7, e.height + 10); ctx.stroke();
-                    } else {
-                        ctx.save(); ctx.translate(e.width * 0.3, e.height); ctx.rotate(walkCycle * 0.5); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 15); ctx.stroke(); ctx.restore();
-                        ctx.save(); ctx.translate(e.width * 0.7, e.height); ctx.rotate(-walkCycle * 0.5); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 15); ctx.stroke(); ctx.restore();
-                        ctx.save(); ctx.translate(0, e.height * 0.4); ctx.rotate(-walkCycle * 0.5); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-15, 10); ctx.stroke(); ctx.restore();
-                        ctx.save(); ctx.translate(e.width, e.height * 0.4); ctx.rotate(walkCycle * 0.5); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(15, 10); ctx.stroke(); ctx.restore();
-                    }
-                    ctx.fillStyle = m.monsterType === 'skinny' ? '#FF5252' : (m.monsterType === 'fat' ? '#D32F2F' : '#7E57C2');
-                    ctx.fillRect(0, 0, e.width, e.height);
-                    if (mFace) ctx.drawImage(mFace, 2, 2, e.width - 4, e.height - 4);
-                    ctx.restore();
+                    drawMonster(ctx, e, m, time, mFace);
                 } else if (e.type === 'boss') {
                     drawDragon(ctx, e.pos.x, e.pos.y, e.width, e.height, time, bossTactics.current.state);
-                    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(e.pos.x, e.pos.y - 40, e.width, 10);
-                    const hpWidth = Math.max(0, (e.hp! / (e.maxHP || 100)) * e.width);
-                    ctx.fillStyle = '#4CAF50'; ctx.fillRect(e.pos.x, e.pos.y - 40, hpWidth, 10);
+                    drawBossHPBar(ctx, e);
                 }
             });
 
-            bullets.current.forEach(b => {
-                ctx.fillStyle = b.type === 'boss-bullet' ? '#FFD700' : 'white';
-                ctx.beginPath(); ctx.arc(b.pos.x + b.width / 2, b.pos.y + b.height / 2, b.width / 2, 0, Math.PI * 2); ctx.fill();
-                if (b.type === 'boss-bullet') {
-                    ctx.fillStyle = 'rgba(255, 69, 0, 0.4)';
-                    ctx.beginPath(); ctx.arc(b.pos.x + b.width + 5, b.pos.y + b.height / 2, b.width / 3, 0, Math.PI * 2); ctx.fill();
-                }
-            });
+            // Bullets
+            drawBullets(ctx, bullets.current);
 
+            // Player
             const p = playerRef.current;
-            const isMoving = !isPausedLoop && (keys.current['ArrowLeft'] || keys.current['KeyA'] || keys.current['ArrowRight'] || keys.current['KeyD']);
+            const isMoving = !statsRef.current.isPaused && (keys.current['ArrowLeft'] || keys.current['KeyA'] || keys.current['ArrowRight'] || keys.current['KeyD']);
 
-            // SMB3 Outline for player
             ctx.save();
             ctx.shadowColor = 'black';
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 3;
             ctx.shadowOffsetY = 3;
-            drawPlayer(ctx, p, time, isMoving, faceImage.current);
+            drawPlayer(ctx, p, time, isMoving, faceImage.current, Date.now() < invincibleUntil.current, statsRef.current.powerups);
             ctx.restore();
 
             ctx.restore();
 
-            // -- HUD / STATUS BAR (SMB3 Bottom Bar Style) --
-            ctx.fillStyle = '#000';
-            ctx.fillRect(0, 520, 1000, 80); // Dark footer
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 4;
-            ctx.strokeRect(10, 530, 980, 60);
-
-            const { hp: curHp, score: curScore, powerups: curPows } = statsRef.current;
-            ctx.fillStyle = 'white'; ctx.font = 'bold 20px "Courier New"';
-            ctx.fillText(`WORLD 1-${stageRef.current}`, 30, 565);
-            ctx.fillText(`SCORE: ${String(curScore).padStart(7, '0')}`, 180, 565);
-
-            // Health as Icons
-            const safeHp = Math.max(0, Math.min(10, curHp || 0));
-            ctx.fillText('LIFE:', 450, 565);
-            for (let i = 0; i < safeHp; i++) {
-                ctx.fillStyle = '#FF5252';
-                ctx.beginPath();
-                ctx.arc(520 + i * 25, 555, 6, 0, Math.PI * 2);
-                ctx.fill();
-            }
-
-            if (curPows.bigBullet > Date.now()) {
-                const sec = Math.ceil((curPows.bigBullet - Date.now()) / 1000);
-                ctx.fillStyle = '#FFD600'; ctx.fillText(`P-WINGS: ${sec}s`, 750, 555);
-            }
-            if (curPows.fastRun > Date.now()) {
-                const sec = Math.ceil((curPows.fastRun - Date.now()) / 1000);
-                ctx.fillStyle = '#00E676'; ctx.fillText(`FAST: ${sec}s`, 750, 580);
-            }
+            // HUD
+            drawHUD(ctx, {
+                stage: stageRef.current,
+                score: statsRef.current.score,
+                hp: statsRef.current.hp,
+                powerups: statsRef.current.powerups,
+            });
 
             // Minimap
-            ctx.save();
-            ctx.translate(canvas.width - MINIMAP_WIDTH - 20, 20);
-            ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT); ctx.clip();
-            const mScaleX = MINIMAP_WIDTH / STAGE_LENGTH;
-            const mScaleY = MINIMAP_HEIGHT / 600;
-            ctx.scale(mScaleX, mScaleY); ctx.translate(-cameraX.current, 0);
-            ctx.fillStyle = '#5D4037'; ctx.fillRect(cameraX.current, 500, STAGE_LENGTH + 1000, 100);
-            const bEnt = entities.current.find(ev => ev.type === 'boss');
-            if (bEnt) { ctx.fillStyle = '#FF1744'; ctx.fillRect(bEnt.pos.x, bEnt.pos.y, bEnt.width, bEnt.height); }
-            ctx.fillStyle = '#FFFFFF'; ctx.fillRect(p.pos.x, p.pos.y, p.width, p.height);
-            ctx.restore();
+            const bossEnt = entities.current.find(ev => ev.type === 'boss');
+            drawMinimap(ctx, canvas.width, MINIMAP_WIDTH, MINIMAP_HEIGHT, cameraX.current, p, bossEnt);
 
+            // Death check
             if (statsRef.current.hp <= 0) {
-                gameActive.current = false; actionsRef.current.setScreen('gameover');
+                gameActive.current = false;
+                actionsRef.current.setScreen('gameover');
             }
         } catch (err) {
             console.error("Game Loop Error:", err);
