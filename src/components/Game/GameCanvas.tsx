@@ -4,7 +4,8 @@ import { useInputs } from '../../hooks/useInputs';
 import {
     UNIT_SIZE, STAGE_LENGTH, BOSS_TRIGGER_X, BOSS_SIZE,
     GRAVITY, JUMP_FORCE, MOVE_SPEED, BULLET_SPEED,
-    PLAYER_WIDTH, PLAYER_HEIGHT, AUTO_SCROLL_SPEED, COLORS
+    PLAYER_WIDTH, PLAYER_HEIGHT, AUTO_SCROLL_SPEED, COLORS,
+    INVINCIBILITY_DURATION
 } from '../../constants';
 import type { Entity, Block, Monster } from '../../types';
 import confetti from 'canvas-confetti';
@@ -44,6 +45,15 @@ export const GameCanvas: React.FC = () => {
         height: PLAYER_HEIGHT,
         type: 'player'
     });
+
+    const invincibleUntil = useRef(0);
+
+    const takeDamage = useCallback((amount: number = 1) => {
+        if (Date.now() < invincibleUntil.current) return false;
+        actionsRef.current.setHP(statsRef.current.hp - amount);
+        invincibleUntil.current = Date.now() + INVINCIBILITY_DURATION;
+        return true;
+    }, []);
 
     const onGround = useRef(false);
     const cameraX = useRef(0);
@@ -377,6 +387,10 @@ export const GameCanvas: React.FC = () => {
         const walkCycle = isMoving ? Math.sin(time / 100) : 0;
         const armCycle = isMoving ? Math.sin(time / 100 + Math.PI) : 0;
 
+        // Invincibility Blinking
+        const isInvincible = Date.now() < invincibleUntil.current;
+        if (isInvincible && Math.floor(time / 100) % 2 === 0) return;
+
         ctx.save();
         ctx.translate(pos.x, pos.y);
 
@@ -528,7 +542,7 @@ export const GameCanvas: React.FC = () => {
 
                 // Fall Death
                 if (p.pos.y > 600) {
-                    actionsRef.current.setHP(statsRef.current.hp - 1);
+                    takeDamage(1);
                     const groundBlocks = entities.current.filter(e => e.type === 'block' && (e as Block).blockType === 'ground');
                     const nextSafe = groundBlocks.find(e => e.pos.x > cameraX.current + 100) || groundBlocks[0];
                     p.pos = nextSafe ? { x: nextSafe.pos.x, y: nextSafe.pos.y - 100 } : { x: cameraX.current + 100, y: 300 };
@@ -555,7 +569,7 @@ export const GameCanvas: React.FC = () => {
                                 entities.current = entities.current.filter(ent => ent.id !== e.id);
                                 p.vel.y = -10; actionsRef.current.addScore(200);
                             } else {
-                                actionsRef.current.setHP(statsRef.current.hp - 1); p.pos.x -= 100;
+                                if (takeDamage(1)) p.pos.x -= 100;
                             }
                         }
                     } else if (e.type === 'boss') {
@@ -584,7 +598,7 @@ export const GameCanvas: React.FC = () => {
                         }
                         if (p.pos.x < e.pos.x + e.width && p.pos.x + p.width > e.pos.x &&
                             p.pos.y < e.pos.y + e.height && p.pos.y + p.height > e.pos.y) {
-                            actionsRef.current.setHP(statsRef.current.hp - 1); p.pos.x -= 200;
+                            if (takeDamage(1)) p.pos.x -= 200;
                         }
                     }
                 });
@@ -614,9 +628,10 @@ export const GameCanvas: React.FC = () => {
                     } else if (b.type === 'boss-bullet') {
                         if (b.pos.x < p.pos.x + p.width && b.pos.x + b.width > p.pos.x &&
                             b.pos.y < p.pos.y + p.height && b.pos.y + b.height > p.pos.y) {
-                            actionsRef.current.setHP(statsRef.current.hp - 1);
-                            bullets.current = bullets.current.filter(bul => bul.id !== b.id);
-                            p.pos.x -= 50;
+                            if (takeDamage(1)) {
+                                bullets.current = bullets.current.filter(bul => bul.id !== b.id);
+                                p.pos.x -= 50;
+                            }
                         }
                     }
                 });

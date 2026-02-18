@@ -21,3 +21,4 @@ export const COLORS = {
     QUESTION: '#F7D01B', // Golden Yellow
 };
 export const AUTO_SCROLL_SPEED = 1.0;
+export const INVINCIBILITY_DURATION = 2000; // 2 seconds
