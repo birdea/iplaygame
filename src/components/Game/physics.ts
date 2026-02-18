@@ -1,72 +1,46 @@
-import type { Entity, Block } from '../../types';
-import { GRAVITY } from '../../constants';
+import type { Entity, Block } from '../core/types';
+import { GRAVITY } from '../core/constants';
 
 /** AABB overlap check between two entities */
 export function aabbOverlap(a: Entity, b: Entity): boolean {
-    return (
-        a.pos.x < b.pos.x + b.width &&
+    return a.pos.x < b.pos.x + b.width &&
         a.pos.x + a.width > b.pos.x &&
         a.pos.y < b.pos.y + b.height &&
-        a.pos.y + a.height > b.pos.y
-    );
+        a.pos.y + a.height > b.pos.y;
 }
 
-export interface VerticalCollisionResult {
-    onGround: boolean;
-    hitQuestion: Block | null;
-}
-
-/**
- * Apply gravity and resolve vertical collisions between player and blocks.
- * Mutates player pos/vel in place. Returns collision info.
- */
-export function applyVerticalPhysics(
-    player: Entity,
-    blocks: Entity[],
-): VerticalCollisionResult {
-    player.vel.y += GRAVITY;
-    player.pos.y += player.vel.y;
-
+export function applyVerticalPhysics(p: Entity, entities: Entity[]): { onGround: boolean, hitQuestion: Block | null } {
     let onGround = false;
     let hitQuestion: Block | null = null;
 
-    for (const e of blocks) {
-        if (e.type !== 'block') continue;
-        if (!aabbOverlap(player, e)) continue;
+    p.vel.y += GRAVITY;
+    p.pos.y += p.vel.y;
 
-        if (player.vel.y > 0 && player.pos.y + player.height - player.vel.y <= e.pos.y + 10) {
-            // Landing on top
-            player.pos.y = e.pos.y - player.height;
-            player.vel.y = 0;
-            onGround = true;
-        } else if (player.vel.y < 0 && player.pos.y - player.vel.y >= e.pos.y + e.height - 10) {
-            // Hitting head on bottom
-            player.pos.y = e.pos.y + e.height;
-            player.vel.y = 0;
-            if ((e as Block).blockType === 'question') {
-                hitQuestion = e as Block;
+    for (const e of entities) {
+        if (e.type === 'block') {
+            const b = e as Block;
+            if (aabbOverlap(p, b)) {
+                if (p.vel.y > 0) {
+                    p.pos.y = b.pos.y - p.height;
+                    p.vel.y = 0;
+                    onGround = true;
+                } else if (p.vel.y < 0) {
+                    p.pos.y = b.pos.y + b.height;
+                    p.vel.y = 0;
+                    if (b.blockType === 'question') hitQuestion = b;
+                }
             }
         }
     }
-
     return { onGround, hitQuestion };
 }
 
-/**
- * Apply horizontal movement and resolve horizontal collisions with blocks.
- * Mutates player pos in place.
- */
-export function applyHorizontalPhysics(player: Entity, blocks: Entity[]): void {
-    player.pos.x += player.vel.x;
-
-    for (const e of blocks) {
-        if (e.type !== 'block') continue;
-        if (!aabbOverlap(player, e)) continue;
-
-        if (player.vel.x > 0) {
-            player.pos.x = e.pos.x - player.width;
-        } else if (player.vel.x < 0) {
-            player.pos.x = e.pos.x + e.width;
+export function applyHorizontalPhysics(p: Entity, entities: Entity[]): void {
+    p.pos.x += p.vel.x;
+    for (const e of entities) {
+        if (e.type === 'block' && aabbOverlap(p, e)) {
+            if (p.vel.x > 0) p.pos.x = e.pos.x - p.width;
+            else if (p.vel.x < 0) p.pos.x = e.pos.x + e.width;
         }
     }
 }

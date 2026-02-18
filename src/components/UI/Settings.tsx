@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import Webcam from 'react-webcam';
 import { motion } from 'framer-motion';
 import { Camera, ChevronLeft, Check } from 'lucide-react';
-import { useGameStore } from '../../store/useGameStore';
+import { useGameStore } from '../core/store/useGameStore';
 
 export const Settings: React.FC = () => {
     const { faces, selectedFaceIndex, addFace, selectFace, setScreen } = useGameStore();

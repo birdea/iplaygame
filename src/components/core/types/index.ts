@@ -24,3 +24,8 @@ export interface Monster extends Entity {
     monsterType: 'ground' | 'skinny' | 'fat' | 'fly' | 'boss';
     direction: number;
 }
+
+export interface Bullet extends Entity {
+    isEnemy?: boolean;
+    isBig?: boolean;
+}

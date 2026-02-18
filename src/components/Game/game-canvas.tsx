@@ -1,23 +1,19 @@
 import React, { useEffect, useRef } from 'react';
-import { useGameStore } from '../../store/useGameStore';
-import { useInputs } from '../../hooks/useInputs';
-import {
-    MOVE_SPEED, JUMP_FORCE, BOSS_TRIGGER_X, AUTO_SCROLL_SPEED,
-} from '../../constants';
-import type { Block, Monster } from '../../types';
-import confetti from 'canvas-confetti';
-import { MobileControls } from '../UI/MobileControls';
+import { useGameStore } from '../core/store/useGameStore';
+import { useInputs } from '../core/hooks/useInputs';
+import type { Block, Monster } from '../core/types';
+import { MobileControls } from '../ui/MobileControls';
 import { Pause } from 'lucide-react';
+import monsterFace1 from '../../assets/monster/monster_face_1.png';
+import monsterFace2 from '../../assets/monster/monster_face_2.png';
+import monsterFace3 from '../../assets/monster/monster_face_3.png';
 
-// Extracted game modules
-import { applyVerticalPhysics, applyHorizontalPhysics, aabbOverlap } from './physics';
+import { updateGame } from './gameLogic';
 import { generateStage } from './stageGenerator';
 import {
     drawBackground, drawBlock, drawDragon, drawPlayer,
     drawMonster, drawBullets, drawBossHPBar, drawHUD, drawMinimap,
 } from './renderer';
-import { createBossEntity, updateBoss } from './bossAI';
-import { createBullet, updateMonsters, updateBullets } from './entityManager';
 import { createInitialGameState, createGameActions } from './gameState';
 import type { GameLoopState, GameActions } from './gameState';
 
@@ -83,11 +79,7 @@ export const GameCanvas: React.FC = () => {
             img.onload = () => { faceImage.current = img; };
         }
 
-        const mFaces = [
-            '/monster/monster_face_1.png',
-            '/monster/monster_face_2.png',
-            '/monster/monster_face_3.png',
-        ];
+        const mFaces = [monsterFace1, monsterFace2, monsterFace3];
         mFaces.forEach((src, idx) => {
             const img = new Image();
             img.src = src;
@@ -121,96 +113,20 @@ export const GameCanvas: React.FC = () => {
 
             if (!gs.gameActive) return;
 
-            if (!gs.isPaused) {
-                // -- 1. LOGIC UPDATES --
-                gs.cameraX += AUTO_SCROLL_SPEED;
-                const speedMult = gs.powerups.fastRun > Date.now() ? 1.6 : 1;
-                const p = gs.player;
+            // -- 1. UPDATE LOGIC --
+            updateGame(
+                gs,
+                actions,
+                keys,
+                time,
+                gameActiveRef,
+                () => setScreen('victory'),
+                () => setScreen('gameover')
+            );
 
-                // Input handling
-                p.vel.x = 0;
-                if (keys.current['ArrowLeft'] || keys.current['KeyA']) p.vel.x = -MOVE_SPEED * speedMult;
-                if (keys.current['ArrowRight'] || keys.current['KeyD']) p.vel.x = MOVE_SPEED * speedMult;
-
-                if ((keys.current['ArrowUp'] || keys.current['KeyW'] || keys.current['Space']) && gs.onGround) {
-                    p.vel.y = JUMP_FORCE;
-                    gs.onGround = false;
-                }
-
-                // Shoot
-                if (keys.current['KeyS'] && time - gs.lastShootTime > 300) {
-                    const isBig = gs.powerups.bigBullet > Date.now();
-                    gs.bullets.push(createBullet(p, isBig));
-                    gs.lastShootTime = time;
-                }
-
-                // Physics
-                const vertResult = applyVerticalPhysics(p, gs.entities);
-                gs.onGround = vertResult.onGround;
-
-                if (vertResult.hitQuestion) {
-                    vertResult.hitQuestion.blockType = 'brick';
-                    const rand = Math.random();
-                    if (rand < 0.25) actions.activatePowerup('bigBullet', 30000);
-                    else if (rand < 0.5) actions.activatePowerup('fastRun', 30000);
-                    else if (rand < 0.75) actions.setHP(gs.hp + 1);
-                    actions.addScore(100);
-                }
-
-                applyHorizontalPhysics(p, gs.entities);
-
-                // Fall Death
-                if (p.pos.y > 600) {
-                    actions.takeDamage(1);
-                    const groundBlocks = gs.entities.filter(e => e.type === 'block' && (e as Block).blockType === 'ground');
-                    const nextSafe = groundBlocks.find(e => e.pos.x > gs.cameraX + 100) || groundBlocks[0];
-                    p.pos = nextSafe ? { x: nextSafe.pos.x, y: nextSafe.pos.y - 100 } : { x: gs.cameraX + 100, y: 300 };
-                    p.vel = { x: 0, y: 0 };
-                }
-
-                // Camera boundary
-                if (p.pos.x < gs.cameraX) p.pos.x = gs.cameraX;
-
-                // Boss trigger
-                if (p.pos.x > BOSS_TRIGGER_X && !gs.bossActive) {
-                    gs.bossActive = true;
-                    gs.entities.push(createBossEntity(gs.stage));
-                }
-
-                // Monster logic
-                gs.entities = updateMonsters(
-                    gs.entities, p, (amt) => actions.takeDamage(amt),
-                    (amt) => actions.addScore(amt),
-                );
-
-                // Boss AI
-                const boss = gs.entities.find(e => e.type === 'boss');
-                if (boss) {
-                    updateBoss(
-                        boss, p, gs.bossTactics, time, gs.stage, gameActiveRef,
-                        (bullet) => { gs.bullets.push(bullet); },
-                    );
-                    // Boss-player collision
-                    if (aabbOverlap(p, boss)) {
-                        if (actions.takeDamage(1)) p.pos.x -= 200;
-                    }
-                }
-
-                // Bullet collisions
-                const bulletResult = updateBullets(gs.bullets, gs.entities, p, (amt) => actions.takeDamage(amt), gs.cameraX);
-                gs.entities = bulletResult.entities;
-                gs.bullets = bulletResult.bullets;
-
-                if (bulletResult.bossDefeated) {
-                    actions.addScore(bulletResult.scoreGained);
-                    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-                    gs.gameActive = false;
-                    setScreen('victory');
-                } else if (bulletResult.scoreGained > 0) {
-                    actions.addScore(bulletResult.scoreGained);
-                }
-
-                gs.cameraX = Math.max(gs.cameraX, p.pos.x - 400);
+            if (gs.isPaused) {
+                // Return early or continue to render current frame (paused)
+                // We'll continue to render so the pause screen shows over the game.
             }
 
             // -- 2. RENDER --

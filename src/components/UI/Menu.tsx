@@ -1,7 +1,8 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Play, Settings as SettingsIcon } from 'lucide-react';
-import { useGameStore } from '../../store/useGameStore';
+import { useGameStore } from '../core/store/useGameStore';
+import mainLogo from '../../assets/main_logo.jpg';
 
 export const Menu: React.FC = () => {
     const setScreen = useGameStore((state) => state.setScreen);
@@ -21,7 +22,7 @@ export const Menu: React.FC = () => {
                 transition={{ delay: 0.2, type: 'spring', stiffness: 260, damping: 20 }}
                 className="w-48 h-48 md:w-64 md:h-64 rounded-3xl overflow-hidden shadow-2xl border-4 border-white/20"
             >
-                <img src="/main_logo.webp" alt="Main Logo" className="w-full h-full object-cover" />
+                <img src={mainLogo} alt="Main Logo" className="w-full h-full object-cover" />
             </motion.div>
 
             <div className="flex flex-col gap-4 w-full max-w-[250px]">

@@ -1,16 +1,11 @@
-import type { Entity } from '../../types';
-import { PLAYER_WIDTH, PLAYER_HEIGHT, INVINCIBILITY_DURATION } from '../../constants';
+import type { Entity } from '../core/types';
+import { PLAYER_WIDTH, PLAYER_HEIGHT, INVINCIBILITY_DURATION } from '../core/constants';
 import type { BossTactics } from './bossAI';
 import { createBossTactics } from './bossAI';
 
-// ---------------------------------------------------------------------------
-// GameLoopState: Single source of truth for all mutable game-loop state
-// ---------------------------------------------------------------------------
 export interface GameLoopState {
-    // Player
+    // Entities
     player: Entity;
-
-    // Entity collections
     entities: Entity[];
     bullets: Entity[];
 
@@ -22,35 +17,34 @@ export interface GameLoopState {
     bossActive: boolean;
     bossTactics: BossTactics;
 
-    // Timing / debounce
+    // Game stats
     invincibleUntil: number;
     lastShootTime: number;
     lastEscTime: number;
-
-    // Game flow
     gameActive: boolean;
-
-    // Authoritative gameplay values (synced TO Zustand for React HUD)
+    isPaused: boolean;
     hp: number;
     score: number;
-    powerups: { bigBullet: number; fastRun: number };
-    isPaused: boolean;
     stage: number;
+
+    // Powerups
+    powerups: {
+        bigBullet: number;
+        fastRun: number;
+    };
 }
 
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
-export function createInitialGameState(stage: number = 1): GameLoopState {
+export function createInitialGameState(stage: number): GameLoopState {
     return {
         player: {
             id: 'player',
+            type: 'player',
             pos: { x: 100, y: 300 },
             vel: { x: 0, y: 0 },
             width: PLAYER_WIDTH,
             height: PLAYER_HEIGHT,
-            type: 'player',
-        },
+            hp: 3,
+        } as Entity,
         entities: [],
         bullets: [],
         cameraX: 0,
@@ -61,22 +55,20 @@ export function createInitialGameState(stage: number = 1): GameLoopState {
         lastShootTime: 0,
         lastEscTime: 0,
         gameActive: true,
+        isPaused: false,
         hp: 3,
         score: 0,
-        powerups: { bigBullet: 0, fastRun: 0 },
-        isPaused: false,
-        stage,
+        stage: stage,
+        powerups: {
+            bigBullet: 0,
+            fastRun: 0,
+        },
     };
 }
 
-// ---------------------------------------------------------------------------
-// Actions proxy – mutates GameLoopState directly, then syncs to Zustand.
-// Eliminates the stale-statsRef problem because reads/writes are on the
-// same object within the same synchronous frame.
-// ---------------------------------------------------------------------------
 export interface GameActions {
-    takeDamage: (amount?: number) => boolean;
-    addScore: (points: number) => void;
+    takeDamage: (amount: number) => boolean;
+    addScore: (amount: number) => void;
     setHP: (hp: number) => void;
     activatePowerup: (type: 'bigBullet' | 'fastRun', duration: number) => void;
     togglePaused: (paused?: boolean) => void;
@@ -87,28 +79,28 @@ export function createGameActions(
     syncFn: () => void,
 ): GameActions {
     return {
-        takeDamage(amount: number = 1): boolean {
-            if (Date.now() < gs.invincibleUntil) return false;
+        takeDamage: (amount) => {
+            if (gs.invincibleUntil > Date.now()) return false;
             gs.hp -= amount;
             gs.invincibleUntil = Date.now() + INVINCIBILITY_DURATION;
             syncFn();
             return true;
         },
-        addScore(points: number): void {
-            gs.score += points;
+        addScore: (amount) => {
+            gs.score += amount;
             syncFn();
         },
-        setHP(hp: number): void {
+        setHP: (hp) => {
             gs.hp = hp;
             syncFn();
         },
-        activatePowerup(type: 'bigBullet' | 'fastRun', duration: number): void {
+        activatePowerup: (type, duration) => {
             gs.powerups[type] = Date.now() + duration;
             syncFn();
         },
-        togglePaused(paused?: boolean): void {
+        togglePaused: (paused) => {
             gs.isPaused = paused !== undefined ? paused : !gs.isPaused;
             syncFn();
-        },
+        }
     };
 }

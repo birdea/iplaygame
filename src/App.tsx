@@ -1,9 +1,13 @@
 import React, { useEffect } from 'react';
-import { useGameStore } from './store/useGameStore';
-import { Menu } from './components/UI/Menu';
-import { Settings } from './components/UI/Settings';
-import { GameCanvas } from './components/Game/GameCanvas';
+import { useGameStore } from './components/core/store/useGameStore';
+import { Menu } from './components/ui/Menu';
+import { Settings } from './components/ui/Settings';
+import { GameCanvas } from './components/game/game-canvas';
 import { motion, AnimatePresence } from 'framer-motion';
+
+import bgm1 from './assets/audio/bgm_001.m4a';
+import bgm2 from './assets/audio/bgm_002.m4a';
+import bgm3 from './assets/audio/bgm_003.m4a';
 
 const App: React.FC = () => {
   const { screen, setScreen, resetGame, nextStage, stage } = useGameStore();
@@ -11,7 +15,7 @@ const App: React.FC = () => {
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    const playlist = ['/bgm_001.m4a', '/bgm_002.m4a', '/bgm_003.m4a'];
+    const playlist = [bgm1, bgm2, bgm3];
     const randomTrack = playlist[Math.floor(Math.random() * playlist.length)];
     const audio = new Audio(randomTrack);
     audio.loop = true;

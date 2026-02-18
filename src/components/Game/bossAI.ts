@@ -1,84 +1,76 @@
-import type { Entity } from '../../types';
-import { GRAVITY, BOSS_SIZE, BOSS_TRIGGER_X } from '../../constants';
+import type { Entity, Bullet } from '../core/types';
+import { GRAVITY, BULLET_SPEED } from '../core/constants';
+import { createBullet } from './entityManager';
 
 export interface BossTactics {
+    state: 'idle' | 'fire' | 'angry';
     lastAttackTime: number;
-    state: 'idle' | 'punch' | 'fire';
     attackDuration: number;
 }
 
-export function createBossTactics(): BossTactics {
-    return { lastAttackTime: 0, state: 'idle', attackDuration: 0 };
-}
+export const createBossTactics = (): BossTactics => ({
+    state: 'idle',
+    lastAttackTime: 0,
+    attackDuration: 0
+});
 
-export function createBossEntity(stage: number): Entity {
-    return {
-        id: 'boss',
-        pos: { x: BOSS_TRIGGER_X + 600, y: 100 },
-        vel: { x: -2, y: 0 },
-        width: BOSS_SIZE,
-        height: BOSS_SIZE,
-        type: 'boss',
-        hp: 50 * stage,
-        maxHP: 50 * stage,
-    };
-}
+export const createBossEntity = (stage: number): Entity => ({
+    id: `boss-${Date.now()}`,
+    type: 'boss',
+    pos: { x: 2600, y: 100 },
+    vel: { x: 0, y: 0 },
+    width: 120,
+    height: 120,
+    hp: 100 + (stage - 1) * 50
+} as Entity);
 
-/**
- * Update boss physics, AI behavior, and attack patterns.
- * Mutates boss entity and tactics in place.
- * Fires bullets asynchronously via the provided `spawnBullet` callback (called from setTimeout).
- */
 export function updateBoss(
     boss: Entity,
     player: Entity,
     tactics: BossTactics,
     time: number,
     stage: number,
-    gameActive: { current: boolean },
-    spawnBullet: (bullet: Entity) => void,
-): void {
-    // Gravity (reduced for boss)
+    gameActiveRef: { current: boolean },
+    spawnBullet: (b: Bullet) => void
+) {
+    // Gravity for boss
     boss.vel.y += GRAVITY * 0.4;
     boss.pos.y += boss.vel.y;
 
-    // Ground collision & random jumps
-    if (boss.pos.y + boss.height > 500) {
-        boss.pos.y = 500 - boss.height;
+    if (boss.pos.y > 600 - 120 - 40) {
+        boss.pos.y = 600 - 120 - 40;
         boss.vel.y = 0;
-        if (Math.random() < 0.02) boss.vel.y = -12;
     }
 
-    // Chase player horizontally
-    const dist = boss.pos.x - player.pos.x;
-    if (dist > 300) boss.pos.x -= 2;
-    else if (dist < 100) boss.pos.x += 2;
+    // Horizontal movement - chase player
+    const dist = player.pos.x - boss.pos.x;
+    const chaseSpeed = stage === 1 ? 2 : 3.5;
+    if (Math.abs(dist) > 100) {
+        boss.pos.x += dist > 0 ? chaseSpeed : -chaseSpeed;
+    }
 
-    // Fire attack on cooldown
-    const cooldown = 3500 / stage;
-    if (time - tactics.lastAttackTime > cooldown) {
+    // Attacks
+    const attackCooldown = 4000 - (stage * 500);
+    if (time - tactics.lastAttackTime > attackCooldown && tactics.state === 'idle') {
         tactics.state = 'fire';
         tactics.lastAttackTime = time;
-        tactics.attackDuration = 1000;
+        tactics.attackDuration = 90; // approx 1.5s at 60fps
 
+        // Fire barrage
         for (let i = 0; i < 3; i++) {
             setTimeout(() => {
-                if (!gameActive.current) return;
-                spawnBullet({
-                    id: `boss-fire-${Date.now()}-${i}`,
-                    pos: { x: boss.pos.x, y: boss.pos.y + boss.height * 0.4 + i * 20 },
-                    vel: { x: -6 - Math.random() * 2, y: (Math.random() - 0.5) * 2 },
-                    width: 30,
-                    height: 30,
-                    type: 'boss-bullet',
-                });
+                if (!gameActiveRef.current) return;
+                const b = createBullet(boss, true) as Bullet;
+                b.isEnemy = true;
+                b.vel.x = -BULLET_SPEED * 0.6;
+                b.vel.y = (i - 1) * 2;
+                spawnBullet(b);
             }, i * 300);
         }
     }
 
-    // Attack duration countdown
     if (tactics.attackDuration > 0) {
-        tactics.attackDuration -= 16;
+        tactics.attackDuration--;
         if (tactics.attackDuration <= 0) tactics.state = 'idle';
     }
 }

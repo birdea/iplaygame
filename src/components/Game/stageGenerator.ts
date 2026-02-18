@@ -1,5 +1,5 @@
-import type { Entity, Block, Monster } from '../../types';
-import { UNIT_SIZE, STAGE_LENGTH, BOSS_TRIGGER_X } from '../../constants';
+import type { Entity, Block, Monster } from '../core/types';
+import { STAGE_LENGTH, UNIT_SIZE, BOSS_TRIGGER_X } from '../core/constants';
 
 let nextId = 0;
 

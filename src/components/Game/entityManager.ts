@@ -1,5 +1,5 @@
-import type { Entity } from '../../types';
-import { BULLET_SPEED } from '../../constants';
+import type { Entity } from '../core/types';
+import { BULLET_SPEED } from '../core/constants';
 import { aabbOverlap } from './physics';
 
 /** Create a player bullet */
