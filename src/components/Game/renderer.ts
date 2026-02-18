@@ -1,4 +1,4 @@
-import type { Entity, Monster } from '../../types';
+import type { Entity, Monster, GroundItem } from '../../types';
 import { COLORS, STAGE_LENGTH } from '../../constants';
 
 /** Draw parallax sky, clouds, and hills */
@@ -374,6 +374,45 @@ export function drawBullets(ctx: CanvasRenderingContext2D, bulletList: Entity[])
             ctx.arc(b.pos.x + b.width + 5, b.pos.y + b.height / 2, b.width / 3, 0, Math.PI * 2);
             ctx.fill();
         }
+    }
+}
+
+/** Draw ground items that have popped out of question blocks */
+export function drawGroundItems(ctx: CanvasRenderingContext2D, items: GroundItem[]): void {
+    const now = Date.now();
+    for (const item of items) {
+        const age = now - item.spawnedAt;
+        const nearExpiry = age > 7_000; // flash during last 3 s
+        if (nearExpiry && Math.floor(now / 150) % 2 === 0) continue; // blink
+
+        const { x, y } = item.pos;
+        const { width, height } = item;
+        ctx.save();
+        ctx.translate(x, y);
+
+        // Background circle
+        const color = item.powerup === 'bigBullet' ? '#FF6F00'
+            : item.powerup === 'fastRun' ? '#00C853'
+                : '#E53935'; // hp
+        ctx.fillStyle = color;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(width / 2, height / 2, width / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Icon label
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${Math.round(height * 0.55)}px Courier`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const label = item.powerup === 'bigBullet' ? 'B'
+            : item.powerup === 'fastRun' ? 'F'
+                : '♥';
+        ctx.fillText(label, width / 2, height / 2 + 1);
+
+        ctx.restore();
     }
 }
 

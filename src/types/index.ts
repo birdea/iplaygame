@@ -28,3 +28,18 @@ export interface Monster extends Entity {
     monsterType: 'ground' | 'skinny' | 'fat' | 'fly' | 'boss';
     direction: number;
 }
+
+/** An item that pops out of a question block and roams before disappearing */
+export interface GroundItem {
+    id: string;
+    pos: { x: number; y: number };
+    vel: { x: number; y: number };
+    width: number;
+    height: number;
+    /** Which powerup this item grants when collected */
+    powerup: 'bigBullet' | 'fastRun' | 'hp';
+    /** Timestamp (ms) when the item was spawned – expires after 10 s */
+    spawnedAt: number;
+    /** True while the item is in the initial pop-up phase */
+    isPopping: boolean;
+}
