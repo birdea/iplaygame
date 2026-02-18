@@ -4,7 +4,7 @@ import { useInputs } from '../../hooks/useInputs';
 import {
     UNIT_SIZE, STAGE_LENGTH, BOSS_TRIGGER_X, BOSS_SIZE,
     GRAVITY, JUMP_FORCE, MOVE_SPEED, BULLET_SPEED,
-    PLAYER_WIDTH, PLAYER_HEIGHT, AUTO_SCROLL_SPEED
+    PLAYER_WIDTH, PLAYER_HEIGHT, AUTO_SCROLL_SPEED, COLORS
 } from '../../constants';
 import type { Entity, Block, Monster } from '../../types';
 import confetti from 'canvas-confetti';
@@ -274,6 +274,99 @@ export const GameCanvas: React.FC = () => {
         ctx.restore();
     }, []);
 
+    // Helper: Draw SMB3 Style Background
+    const drawBackground = (ctx: CanvasRenderingContext2D, cameraX: number, time: number) => {
+        const width = 1000;
+        const height = 600;
+
+        // 1. Sky
+        ctx.fillStyle = COLORS.SKY;
+        ctx.fillRect(0, 0, width, height);
+
+        // 2. Clouds (Far Parallax - 10% speed)
+        const cloudX = -(cameraX * 0.1) % 400;
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        for (let i = -1; i < 4; i++) {
+            const cx = cloudX + i * 400 + 50;
+            const cy = 100 + Math.sin(time / 2000 + i) * 20;
+            ctx.beginPath();
+            ctx.arc(cx, cy, 30, 0, Math.PI * 2);
+            ctx.arc(cx + 40, cy, 40, 0, Math.PI * 2);
+            ctx.arc(cx + 80, cy, 30, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 3. Hills (Near Parallax - 30% speed)
+        const hillX = -(cameraX * 0.3) % 800;
+        ctx.fillStyle = '#228B22'; // Forest Green
+        ctx.strokeStyle = '#004d00';
+        ctx.lineWidth = 4;
+        for (let i = -1; i < 3; i++) {
+            const hx = hillX + i * 800;
+            ctx.beginPath();
+            ctx.moveTo(hx, 500);
+            ctx.quadraticCurveTo(hx + 200, 200, hx + 400, 500);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.save();
+            ctx.fillStyle = '#32CD32'; // Lime Green
+            const hx2 = hillX + i * 800 + 400;
+            ctx.beginPath();
+            ctx.moveTo(hx2, 500);
+            ctx.quadraticCurveTo(hx2 + 150, 300, hx2 + 300, 500);
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        }
+    };
+
+    // Helper: Draw SMB3 style Block
+    const drawBlock = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, type: 'ground' | 'brick' | 'question') => {
+        ctx.save();
+        ctx.translate(x, y);
+
+        if (type === 'ground') {
+            ctx.fillStyle = COLORS.GROUND;
+            ctx.fillRect(0, 0, w, h);
+            ctx.strokeStyle = '#3E2723';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(2, 2, w - 4, h - 4);
+            ctx.fillStyle = '#3E2723';
+            const dotSize = 4;
+            ctx.fillRect(8, 8, dotSize, dotSize);
+            ctx.fillRect(w - 12, 8, dotSize, dotSize);
+            ctx.fillRect(8, h - 12, dotSize, dotSize);
+            ctx.fillRect(w - 12, h - 12, dotSize, dotSize);
+        } else if (type === 'brick') {
+            ctx.fillStyle = COLORS.BRICK;
+            ctx.fillRect(0, 0, w, h);
+            ctx.strokeStyle = '#3E2723';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(1, 1, w - 2, h - 2);
+            ctx.beginPath();
+            ctx.moveTo(1, h / 2); ctx.lineTo(w - 1, h / 2);
+            ctx.moveTo(w / 2, 1); ctx.lineTo(w / 2, h / 2);
+            ctx.moveTo(w / 4, h / 2); ctx.lineTo(w / 4, h - 1);
+            ctx.moveTo(3 * w / 4, h / 2); ctx.lineTo(3 * w / 4, h - 1);
+            ctx.stroke();
+        } else if (type === 'question') {
+            ctx.fillStyle = COLORS.QUESTION;
+            ctx.fillRect(0, 0, w, h);
+            ctx.strokeStyle = '#3E2723';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(2, 2, w - 4, h - 4);
+            ctx.fillStyle = '#3E2723';
+            ctx.font = 'bold 36px Courier';
+            ctx.textAlign = 'center';
+            ctx.fillText('?', w / 2, h / 2 + 12);
+            ctx.fillRect(4, 4, 3, 3); ctx.fillRect(w - 7, 4, 3, 3);
+            ctx.fillRect(4, h - 7, 3, 3); ctx.fillRect(w - 7, h - 7, 3, 3);
+        }
+
+        ctx.restore();
+    };
+
     // Helper: Draw Player with Arms and Legs
     const drawPlayer = useCallback((ctx: CanvasRenderingContext2D, p: Entity, time: number, isMoving: boolean, faceImg: HTMLImageElement | null) => {
         const { pos } = p;
@@ -531,21 +624,27 @@ export const GameCanvas: React.FC = () => {
 
             // -- 2. RENDER --
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Parallax Background
+            drawBackground(ctx, cameraX.current, time);
+
             ctx.save();
             ctx.translate(-cameraX.current, 0);
 
             entities.current.forEach(e => {
                 if (e.type === 'block') {
-                    const blk = e as Block;
-                    ctx.fillStyle = blk.blockType === 'ground' ? '#5D4037' : (blk.blockType === 'question' ? '#FFD600' : '#8D6E63');
-                    ctx.fillRect(e.pos.x, e.pos.y, e.width, e.height);
-                    if (blk.blockType === 'question') {
-                        ctx.fillStyle = 'white'; ctx.font = '24px Arial'; ctx.fillText('?', e.pos.x + 18, e.pos.y + 35);
-                    }
+                    drawBlock(ctx, e.pos.x, e.pos.y, e.width, e.height, (e as Block).blockType);
                 } else if (e.type === 'monster') {
                     const m = e as Monster;
                     const mFace = monsterFaces.current[m.monsterType === 'skinny' ? 0 : m.monsterType === 'fat' ? 1 : 2];
                     ctx.save(); ctx.translate(e.pos.x, e.pos.y);
+
+                    // SMB3 Outline for monsters
+                    ctx.shadowColor = 'black';
+                    ctx.shadowBlur = 0;
+                    ctx.shadowOffsetX = 2;
+                    ctx.shadowOffsetY = 2;
+
                     const walkCycle = Math.sin(time / 150);
                     const limbWidth = m.monsterType === 'skinny' ? 4 : (m.monsterType === 'fat' ? 12 : 6);
                     ctx.strokeStyle = '#333'; ctx.lineWidth = limbWidth; ctx.lineCap = 'round';
@@ -586,23 +685,47 @@ export const GameCanvas: React.FC = () => {
 
             const p = playerRef.current;
             const isMoving = !isPausedLoop && (keys.current['ArrowLeft'] || keys.current['KeyA'] || keys.current['ArrowRight'] || keys.current['KeyD']);
+
+            // SMB3 Outline for player
+            ctx.save();
+            ctx.shadowColor = 'black';
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 3;
+            ctx.shadowOffsetY = 3;
             drawPlayer(ctx, p, time, isMoving, faceImage.current);
             ctx.restore();
 
+            ctx.restore();
+
+            // -- HUD / STATUS BAR (SMB3 Bottom Bar Style) --
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 520, 1000, 80); // Dark footer
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(10, 530, 980, 60);
+
             const { hp: curHp, score: curScore, powerups: curPows } = statsRef.current;
-            ctx.fillStyle = 'white'; ctx.font = 'bold 24px Outfit';
-            ctx.fillText(`STAGE: ${stageRef.current}`, 20, 140);
-            ctx.fillText(`SCORE: ${curScore}`, 20, 170);
+            ctx.fillStyle = 'white'; ctx.font = 'bold 20px "Courier New"';
+            ctx.fillText(`WORLD 1-${stageRef.current}`, 30, 565);
+            ctx.fillText(`SCORE: ${String(curScore).padStart(7, '0')}`, 180, 565);
+
+            // Health as Icons
             const safeHp = Math.max(0, Math.min(10, curHp || 0));
-            if (safeHp > 0) ctx.fillText(`${'❤️'.repeat(safeHp)}`, 20, 110);
+            ctx.fillText('LIFE:', 450, 565);
+            for (let i = 0; i < safeHp; i++) {
+                ctx.fillStyle = '#FF5252';
+                ctx.beginPath();
+                ctx.arc(520 + i * 25, 555, 6, 0, Math.PI * 2);
+                ctx.fill();
+            }
 
             if (curPows.bigBullet > Date.now()) {
                 const sec = Math.ceil((curPows.bigBullet - Date.now()) / 1000);
-                ctx.fillStyle = '#FFD600'; ctx.fillText(`BIG BULLET: ${sec}s`, 20, 210);
+                ctx.fillStyle = '#FFD600'; ctx.fillText(`P-WINGS: ${sec}s`, 750, 555);
             }
             if (curPows.fastRun > Date.now()) {
                 const sec = Math.ceil((curPows.fastRun - Date.now()) / 1000);
-                ctx.fillStyle = '#00E676'; ctx.fillText(`FAST RUN: ${sec}s`, 20, 240);
+                ctx.fillStyle = '#00E676'; ctx.fillText(`FAST: ${sec}s`, 750, 580);
             }
 
             // Minimap
