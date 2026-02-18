@@ -18,16 +18,16 @@ export const Settings: React.FC = () => {
     };
 
     return (
-        <div className="h-full flex flex-col p-8 max-w-4xl mx-auto">
-            <div className="flex items-center gap-4 mb-8">
+        <div className="h-full flex flex-col p-4 md:p-8 max-w-4xl mx-auto overflow-y-auto">
+            <div className="flex items-center gap-4 mb-6 md:mb-8">
                 <button onClick={() => setScreen('menu')} className="btn-secondary p-2 rounded-full">
                     <ChevronLeft size={24} />
                 </button>
-                <h2 className="text-4xl font-bold">Settings</h2>
+                <h2 className="text-3xl md:text-4xl font-bold">Settings</h2>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="glass-morphism p-6 flex flex-col items-center gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+                <div className="glass-morphism p-4 md:p-6 flex flex-col items-center gap-4">
                     <h3 className="text-xl font-semibold mb-2">Register Face</h3>
 
                     <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black/20 flex items-center justify-center border-2 border-dashed border-white/20">
@@ -56,18 +56,18 @@ export const Settings: React.FC = () => {
                             </button>
                         )}
                     </div>
-                    <p className="text-sm text-white/60">Capture your face to use on the character!</p>
+                    <p className="text-sm text-white/60 text-center">Capture your face to use on the character!</p>
                 </div>
 
-                <div className="glass-morphism p-6 flex flex-col gap-4">
-                    <h3 className="text-xl font-semibold mb-2">Select Your Hero ({faces.length}/10)</h3>
+                <div className="glass-morphism p-4 md:p-6 flex flex-col gap-4">
+                    <h3 className="text-xl font-semibold mb-2 text-center md:text-left">Select Your Hero ({faces.length}/10)</h3>
 
-                    <div className="grid grid-cols-4 gap-4 overflow-y-auto max-h-[300px] p-2">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 md:gap-4 overflow-y-auto max-h-[250px] md:max-h-[300px] p-2">
                         {faces.map((face, index) => (
                             <motion.div
                                 key={index}
                                 whileHover={{ scale: 1.05 }}
-                                className="relative cursor-pointer"
+                                className="relative cursor-pointer flex justify-center"
                                 onClick={() => selectFace(index)}
                             >
                                 <img
@@ -76,7 +76,7 @@ export const Settings: React.FC = () => {
                                     className={`face-preview ${selectedFaceIndex === index ? 'selected' : ''}`}
                                 />
                                 {selectedFaceIndex === index && (
-                                    <div className="absolute -top-1 -right-1 bg-accent text-dark p-1 rounded-full">
+                                    <div className="absolute top-0 right-0 sm:-top-1 sm:-right-1 bg-accent text-dark p-1 rounded-full">
                                         <Check size={12} strokeWidth={4} />
                                     </div>
                                 )}
