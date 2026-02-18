@@ -2,9 +2,9 @@ import React, { useEffect, useRef } from 'react';
 import { useGameStore } from '../../store/useGameStore';
 import { useInputs } from '../../hooks/useInputs';
 import {
-    MOVE_SPEED, JUMP_FORCE, BOSS_TRIGGER_X, AUTO_SCROLL_SPEED,
+    MOVE_SPEED, JUMP_FORCE, BOSS_TRIGGER_X, AUTO_SCROLL_SPEED, CLUB_RANGE,
 } from '../../constants';
-import type { Block, Monster } from '../../types';
+import type { Block, Monster, Entity } from '../../types';
 import confetti from 'canvas-confetti';
 import { MobileControls } from '../UI/MobileControls';
 import { Pause } from 'lucide-react';
@@ -14,11 +14,15 @@ import { applyVerticalPhysics, applyHorizontalPhysics, aabbOverlap } from './phy
 import { generateStage } from './stageGenerator';
 import {
     drawBackground, drawBlock, drawDragon, drawPlayer,
-    drawMonster, drawBullets, drawGroundItems, drawBossHPBar, drawHUD, drawMinimap,
+    drawMonster, drawBullets, drawGroundItems, drawBossHPBar, drawHUD, drawMinimap, drawEffects,
 } from './renderer';
 import { createBossEntity, updateBoss } from './bossAI';
-import { createBullet, updateMonsters, updateBullets, spawnGroundItem, updateGroundItems } from './entityManager';
+import {
+    createBullet, updateMonsters, updateBullets, spawnGroundItem,
+    updateGroundItems, updateEffects, spawnContinuousMonster
+} from './entityManager';
 import { createInitialGameState, createGameActions } from './gameState';
+import { AMMO_REFILL, SHIELD_REFILL } from '../../constants';
 import type { GameLoopState, GameActions } from './gameState';
 
 const MINIMAP_WIDTH = 150;
@@ -62,6 +66,7 @@ export const GameCanvas: React.FC = () => {
                 powerups: g.powerups,
                 isPaused: g.isPaused,
                 stage: g.stage,
+                aCharged: g.aCharged,
             });
         };
         actionsRef.current = createGameActions(gs, syncFn);
@@ -75,6 +80,7 @@ export const GameCanvas: React.FC = () => {
     // -----------------------------------------------------------------------
     const faceImage = useRef<HTMLImageElement | null>(null);
     const monsterFaces = useRef<(HTMLImageElement | null)[]>([null, null, null]);
+    const lastMonsterSpawnTime = useRef<number>(0);
 
     useEffect(() => {
         if (faces[selectedFaceIndex]) {
@@ -129,28 +135,50 @@ export const GameCanvas: React.FC = () => {
 
                 // Input handling
                 p.vel.x = 0;
-                if (keys.current['ArrowLeft'] || keys.current['KeyA']) p.vel.x = -MOVE_SPEED * speedMult;
-                if (keys.current['ArrowRight'] || keys.current['KeyD']) p.vel.x = MOVE_SPEED * speedMult;
+                if (keys.current['ArrowLeft']) p.vel.x = -MOVE_SPEED * speedMult;
+                if (keys.current['ArrowRight']) p.vel.x = MOVE_SPEED * speedMult;
 
                 if ((keys.current['ArrowUp'] || keys.current['KeyW']) && gs.onGround) {
                     p.vel.y = JUMP_FORCE;
                     gs.onGround = false;
                 }
 
-                // Shoot (S key) + trigger swing
-                if (keys.current['KeyS'] && time - gs.lastShootTime > 300) {
+                // A key: Swing Club or Charge Mega Swing
+                const CHARGE_DURATION = 3000;
+                if (keys.current['KeyA']) {
+                    if (gs.aChargeStart === 0) {
+                        gs.aChargeStart = time;
+                    } else if (time - gs.aChargeStart >= CHARGE_DURATION) {
+                        gs.aCharged = true;
+                    }
+                } else {
+                    if (gs.aCharged) {
+                        // RELEASE MEGA SWING
+                        gs.lastMegaSwingTime = time;
+                        gs.aCharged = false;
+                    } else if (gs.aChargeStart !== 0) {
+                        // Normal swing if released before full charge
+                        if (time - gs.lastSwingTime > 400) {
+                            gs.lastSwingTime = time;
+                        }
+                    }
+                    gs.aChargeStart = 0;
+                    gs.aCharged = false;
+                }
+
+                // S key: Shoot Bullet
+                if (keys.current['KeyS'] && time - gs.lastShootTime > 300 && gs.ammo > 0) {
                     const isBig = gs.powerups.bigBullet > Date.now();
                     gs.bullets.push(createBullet(p, isBig));
                     gs.lastShootTime = time;
-                    gs.lastSwingTime = time; // trigger club swing on shoot
+                    gs.ammo--;
                 }
 
-                // Auto-swing club every 600ms while moving or periodically
-                const isWalking = keys.current['ArrowLeft'] || keys.current['KeyA'] || keys.current['ArrowRight'] || keys.current['KeyD'];
-                if (isWalking && time - gs.lastSwingTime > 600) {
-                    gs.lastSwingTime = time;
-                } else if (!isWalking && time - gs.lastSwingTime > 1200) {
-                    gs.lastSwingTime = time; // idle swing every 1.2s
+                // D key: Use Shield
+                if (keys.current['KeyD'] && time - gs.lastShieldTime > 500) {
+                    if (actions.useShield()) {
+                        gs.lastShieldTime = time;
+                    }
                 }
 
                 // Physics
@@ -160,8 +188,11 @@ export const GameCanvas: React.FC = () => {
                 if (vertResult.hitQuestion) {
                     vertResult.hitQuestion.blockType = 'brick';
                     const rand = Math.random();
-                    const powerup: 'bigBullet' | 'fastRun' | 'hp' =
-                        rand < 0.25 ? 'bigBullet' : rand < 0.5 ? 'fastRun' : 'hp';
+                    const powerup: 'bigBullet' | 'fastRun' | 'hp' | 'shield' | 'ammo' =
+                        rand < 0.2 ? 'bigBullet' :
+                            rand < 0.4 ? 'fastRun' :
+                                rand < 0.6 ? 'shield' :
+                                    rand < 0.8 ? 'ammo' : 'hp';
                     gs.groundItems.push(spawnGroundItem(vertResult.hitQuestion, powerup));
                     actions.addScore(100);
                 }
@@ -226,26 +257,40 @@ export const GameCanvas: React.FC = () => {
                 }
 
                 // Monster logic
-                gs.entities = updateMonsters(
+                spawnContinuousMonster(gs.entities, gs.cameraX, gs.stage, time, lastMonsterSpawnTime);
+
+                const isMegaSwing = (time - gs.lastMegaSwingTime) < 600;
+                const effectiveRange = isMegaSwing ? CLUB_RANGE * 2 : CLUB_RANGE;
+
+                const monsterResult = updateMonsters(
                     gs.entities, p, (amt) => actions.takeDamage(amt),
                     (amt) => actions.addScore(amt),
+                    time, isMegaSwing ? gs.lastMegaSwingTime : gs.lastSwingTime,
+                    gs.effects, gs.cameraX, effectiveRange, isMegaSwing ? 4 : 1
                 );
+                gs.entities = monsterResult.entities;
+                if (monsterResult.scoreGained > 0) actions.addScore(monsterResult.scoreGained);
+                if (monsterResult.bossDefeated) {
+                    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                    gs.gameActive = false;
+                    setScreen('victory');
+                }
 
                 // Boss AI
                 const boss = gs.entities.find(e => e.type === 'boss');
                 if (boss) {
                     updateBoss(
-                        boss, p, gs.bossTactics, time, gs.stage, gameActiveRef,
-                        (bullet) => { gs.bullets.push(bullet); },
+                        boss, p, gs.bossTactics, time, gs.stage, gameActiveRef, gs.cameraX,
+                        (bullet: Entity) => { gs.bullets.push(bullet); },
                     );
-                    // Boss-player collision
-                    if (aabbOverlap(p, boss)) {
+                    // Boss-player collision (using 0.7 ratio for fairer hitbox)
+                    if (aabbOverlap(p, boss, 0.7)) {
                         if (actions.takeDamage(1)) p.pos.x -= 200;
                     }
                 }
 
                 // Bullet collisions
-                const bulletResult = updateBullets(gs.bullets, gs.entities, p, (amt) => actions.takeDamage(amt), gs.cameraX);
+                const bulletResult = updateBullets(gs.bullets, gs.entities, p, (amt) => actions.takeDamage(amt), gs.cameraX, gs.effects);
                 gs.entities = bulletResult.entities;
                 gs.bullets = bulletResult.bullets;
 
@@ -264,11 +309,18 @@ export const GameCanvas: React.FC = () => {
                 if (itemResult.collected) {
                     if (itemResult.collected === 'hp') {
                         actions.setHP(gs.hp + 1);
+                    } else if (itemResult.collected === 'ammo') {
+                        actions.addAmmo(AMMO_REFILL);
+                    } else if (itemResult.collected === 'shield') {
+                        actions.addShields(SHIELD_REFILL);
                     } else {
-                        actions.activatePowerup(itemResult.collected, 30000);
+                        actions.activatePowerup(itemResult.collected as 'bigBullet' | 'fastRun', 30000);
                     }
                     actions.addScore(50);
                 }
+
+                // Effects update
+                gs.effects = updateEffects(gs.effects);
 
                 gs.cameraX = Math.max(gs.cameraX, p.pos.x - 400);
             }
@@ -300,6 +352,9 @@ export const GameCanvas: React.FC = () => {
             // Ground items (popped from ? blocks)
             drawGroundItems(ctx, gs.groundItems);
 
+            // Effects (Sparks)
+            drawEffects(ctx, gs.effects);
+
             // Player
             const p = gs.player;
             const isMoving = !gs.isPaused && (keys.current['ArrowLeft'] || keys.current['KeyA'] || keys.current['ArrowRight'] || keys.current['KeyD']);
@@ -309,7 +364,7 @@ export const GameCanvas: React.FC = () => {
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 3;
             ctx.shadowOffsetY = 3;
-            drawPlayer(ctx, p, time, isMoving, faceImage.current, Date.now() < gs.invincibleUntil, gs.powerups, gs.lastSwingTime);
+            drawPlayer(ctx, p, time, isMoving, faceImage.current, Date.now() < gs.invincibleUntil, gs.powerups, gs.lastSwingTime, gs.shieldUntil, gs.aCharged, gs.lastMegaSwingTime);
             ctx.restore();
 
             ctx.restore();
@@ -319,6 +374,8 @@ export const GameCanvas: React.FC = () => {
                 stage: gs.stage,
                 score: gs.score,
                 hp: gs.hp,
+                ammo: gs.ammo,
+                shields: gs.shields,
                 powerups: gs.powerups,
             });
 

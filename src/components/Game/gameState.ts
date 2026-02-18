@@ -1,5 +1,5 @@
-import type { Entity, GroundItem } from '../../types';
-import { PLAYER_WIDTH, PLAYER_HEIGHT, INVINCIBILITY_DURATION } from '../../constants';
+import type { Entity, GroundItem, Effect } from '../../types';
+import { PLAYER_WIDTH, PLAYER_HEIGHT, INVINCIBILITY_DURATION, SHIELD_DURATION } from '../../constants';
 import type { BossTactics } from './bossAI';
 import { createBossTactics } from './bossAI';
 
@@ -14,6 +14,7 @@ export interface GameLoopState {
     entities: Entity[];
     bullets: Entity[];
     groundItems: GroundItem[];
+    effects: Effect[];
 
     // Camera & physics
     cameraX: number;
@@ -25,9 +26,16 @@ export interface GameLoopState {
 
     // Timing / debounce
     invincibleUntil: number;
+    shieldUntil: number;
     lastShootTime: number;
     lastEscTime: number;
     lastSwingTime: number; // Club swing animation
+    lastShieldTime: number;
+    lastMegaSwingTime: number; // Mega flail throw
+
+    // Skill Charging
+    aChargeStart: number;
+    aCharged: boolean;
 
     // Game flow
     gameActive: boolean;
@@ -35,6 +43,8 @@ export interface GameLoopState {
     // Authoritative gameplay values (synced TO Zustand for React HUD)
     hp: number;
     score: number;
+    ammo: number;
+    shields: number;
     powerups: { bigBullet: number; fastRun: number };
     isPaused: boolean;
     stage: number;
@@ -56,17 +66,25 @@ export function createInitialGameState(stage: number = 1): GameLoopState {
         entities: [],
         bullets: [],
         groundItems: [],
+        effects: [],
         cameraX: 0,
         onGround: false,
         bossActive: false,
         bossTactics: createBossTactics(),
         invincibleUntil: 0,
+        shieldUntil: 0,
         lastShootTime: 0,
         lastEscTime: 0,
         lastSwingTime: 0,
+        lastShieldTime: 0,
+        lastMegaSwingTime: 0,
+        aChargeStart: 0,
+        aCharged: false,
         gameActive: true,
         hp: 3,
         score: 0,
+        ammo: 0,
+        shields: 0,
         powerups: { bigBullet: 0, fastRun: 0 },
         isPaused: false,
         stage,
@@ -82,6 +100,9 @@ export interface GameActions {
     takeDamage: (amount?: number) => boolean;
     addScore: (points: number) => void;
     setHP: (hp: number) => void;
+    addAmmo: (amount: number) => void;
+    addShields: (amount: number) => void;
+    useShield: () => boolean;
     activatePowerup: (type: 'bigBullet' | 'fastRun', duration: number) => void;
     togglePaused: (paused?: boolean) => void;
 }
@@ -92,9 +113,10 @@ export function createGameActions(
 ): GameActions {
     return {
         takeDamage(amount: number = 1): boolean {
-            if (Date.now() < gs.invincibleUntil) return false;
+            const now = Date.now();
+            if (now < gs.invincibleUntil || now < gs.shieldUntil) return false;
             gs.hp -= amount;
-            gs.invincibleUntil = Date.now() + INVINCIBILITY_DURATION;
+            gs.invincibleUntil = now + INVINCIBILITY_DURATION;
             syncFn();
             return true;
         },
@@ -105,6 +127,24 @@ export function createGameActions(
         setHP(hp: number): void {
             gs.hp = hp;
             syncFn();
+        },
+        addAmmo(amount: number): void {
+            gs.ammo += amount;
+            syncFn();
+        },
+        addShields(amount: number): void {
+            gs.shields += amount;
+            syncFn();
+        },
+        useShield(): boolean {
+            const now = Date.now();
+            if (gs.shields > 0 && now > gs.shieldUntil) {
+                gs.shields--;
+                gs.shieldUntil = now + SHIELD_DURATION;
+                syncFn();
+                return true;
+            }
+            return false;
         },
         activatePowerup(type: 'bigBullet' | 'fastRun', duration: number): void {
             gs.powerups[type] = Date.now() + duration;

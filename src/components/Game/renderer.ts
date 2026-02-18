@@ -1,5 +1,5 @@
-import type { Entity, Monster, GroundItem } from '../../types';
-import { COLORS, STAGE_LENGTH } from '../../constants';
+import type { Entity, Monster, GroundItem, Effect } from '../../types';
+import { COLORS, STAGE_LENGTH, CLUB_LENGTH } from '../../constants';
 
 /** Draw parallax sky, clouds, and hills */
 export function drawBackground(ctx: CanvasRenderingContext2D, cameraX: number, time: number): void {
@@ -115,8 +115,6 @@ export function drawBlock(
     ctx.restore();
 }
 
-
-
 /** Draw the dragon boss (flipped to face left) */
 export function drawDragon(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, time: number, state: string): void {
     ctx.save();
@@ -213,8 +211,13 @@ export function drawPlayer(
     isInvincible: boolean,
     powerups: { bigBullet: number },
     lastSwingTime: number = 0,
+    shieldUntil: number = 0,
+    aCharged: boolean = false,
+    lastMegaSwingTime: number = 0,
 ): void {
-    if (isInvincible && Math.floor(time / 100) % 2 === 0) return;
+    const now = Date.now();
+    const isShieldActive = shieldUntil > now;
+    if (isInvincible && !isShieldActive && Math.floor(time / 100) % 2 === 0) return;
 
     const { pos } = p;
     const walkCycle = isMoving ? Math.sin(time / 100) : 0;
@@ -226,8 +229,61 @@ export function drawPlayer(
     // swingPhase: 0→1→0 arc over 500ms
     const swingPhase = isSwinging ? Math.sin((swingElapsed / 500) * Math.PI) : 0;
 
+    // Mega Swing animation: 0.6s duration
+    const megaElapsed = time - lastMegaSwingTime;
+    const isMegaSwinging = megaElapsed < 600;
+    const megaPhase = isMegaSwinging ? Math.sin((megaElapsed / 600) * Math.PI) : 0;
+
     ctx.save();
     ctx.translate(pos.x, pos.y);
+
+    // Draw Charging Aura
+    if (aCharged) {
+        ctx.save();
+        ctx.translate(25, 40);
+        ctx.rotate(time / 200);
+
+        // Outer pulsing glow
+        ctx.beginPath();
+        const pulse = Math.sin(time / 100) * 10;
+        ctx.arc(0, 0, 55 + pulse, 0, Math.PI * 2);
+        const grad = ctx.createRadialGradient(0, 0, 30, 0, 0, 60 + pulse);
+        grad.addColorStop(0, 'rgba(255, 215, 0, 0)');
+        grad.addColorStop(0.5, 'rgba(255, 215, 0, 0.3)');
+        grad.addColorStop(1, 'rgba(255, 215, 0, 0)');
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        // Energy Rays
+        ctx.strokeStyle = '#FFD700';
+        ctx.lineWidth = 3;
+        for (let r = 0; r < 8; r++) {
+            ctx.rotate(Math.PI / 4);
+            ctx.beginPath();
+            ctx.moveTo(35 + pulse, 0);
+            ctx.lineTo(55 + pulse, 0);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    // Draw Shield Effect
+    if (isShieldActive) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(25, 40, 60, 0, Math.PI * 2);
+        const grad = ctx.createRadialGradient(25, 40, 40, 25, 40, 65);
+        grad.addColorStop(0, 'rgba(33, 150, 243, 0)');
+        grad.addColorStop(1, 'rgba(33, 150, 243, 0.4)');
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([10, 5]);
+        ctx.lineDashOffset = -time / 20;
+        ctx.stroke();
+        ctx.restore();
+    }
 
     const isBigBullet = powerups.bigBullet > Date.now();
     const bodyColor = isBigBullet ? '#F44336' : '#D32F2F';
@@ -261,40 +317,106 @@ export function drawPlayer(
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-15, 15); ctx.stroke();
     ctx.restore();
 
-    // Right arm + Club
+    // Right arm + Flail
     ctx.save();
     ctx.translate(45, 38);
-    // During swing: arm swings up (-PI/2) then down; otherwise normal walk
-    const rightArmAngle = isSwinging
-        ? -Math.PI * 0.6 + swingPhase * Math.PI * 1.1  // up-swing → down-swing
-        : -armCycle * 0.5;
+
+    let rightArmAngle = -armCycle * 0.5;
+    let flailRotation = 0;
+
+    if (isMegaSwinging) {
+        // Arm points slightly forward-up
+        rightArmAngle = -Math.PI * 0.3;
+        // Flail itself rotates to point forward (right 20 deg)
+        flailRotation = -Math.PI * 0.3;
+    } else if (isSwinging) {
+        rightArmAngle = -Math.PI * 0.6 + swingPhase * Math.PI * 1.1;
+    }
+
     ctx.rotate(rightArmAngle);
-    // Arm
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(15, 15); ctx.stroke();
 
-    // Club (attached to end of right arm)
+    // Flail (Handle + Chain + Spiked Ball)
     ctx.save();
     ctx.translate(15, 15);
-    // Club handle
-    ctx.strokeStyle = '#8B4513';
-    ctx.lineWidth = 6;
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 22); ctx.stroke();
-    // Club head
-    const clubColor = isBigBullet ? '#FF6F00' : '#5D4037';
-    ctx.fillStyle = clubColor;
-    ctx.strokeStyle = '#3E2723';
+    ctx.rotate(flailRotation); // Apply extra rotation for throw
+
+    // 1. Handle
+    ctx.strokeStyle = '#4E342E';
+    ctx.lineWidth = 8;
+    const handleLen = 30;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, handleLen); ctx.stroke();
+
+    // 2. Flexible Chain
+    const chainSegments = 15;
+    const baseChainLen = CLUB_LENGTH;
+    // Stretch chain during mega swing - even further (up to 3x base)
+    const currentChainLen = isMegaSwinging ? baseChainLen + megaPhase * CLUB_LENGTH * 2.5 : baseChainLen;
+    const segmentLen = currentChainLen / chainSegments;
+    // curveAmount: less hanging, more "whip" like for mega swing
+    const curveAmount = isSwinging ? Math.sin(swingPhase * Math.PI) * 40 :
+        isMegaSwinging ? Math.sin(megaPhase * Math.PI) * -15 : 0;
+
+    ctx.translate(0, handleLen);
+    ctx.strokeStyle = isMegaSwinging ? '#FFD700' : '#9E9E9E';
+    ctx.lineWidth = isMegaSwinging ? 6 : 3;
+
+    let lastX = 0;
+    let lastY = 0;
+
+    for (let i = 1; i <= chainSegments; i++) {
+        const ratio = i / chainSegments;
+        // Straighter trajectory for mega throw
+        const currentX = Math.sin(ratio * Math.PI * (isMegaSwinging ? 0.1 : 0.5)) * curveAmount;
+        const currentY = i * segmentLen;
+
+        // Draw link line
+        ctx.beginPath();
+        ctx.moveTo(lastX, lastY);
+        ctx.lineTo(currentX, currentY);
+        ctx.stroke();
+
+        // Link circle decoration
+        ctx.fillStyle = '#757575';
+        ctx.beginPath(); ctx.arc(currentX, currentY, 4, 0, Math.PI * 2); ctx.fill();
+
+        lastX = currentX;
+        lastY = currentY;
+    }
+
+    // 3. Spiked Iron Ball
+    ctx.save();
+    ctx.translate(lastX, lastY);
+    const ballColor = (isBigBullet || isMegaSwinging) ? '#FFD700' : '#263238';
+    ctx.fillStyle = ballColor;
+    ctx.strokeStyle = '#000';
     ctx.lineWidth = 2;
+
+    const ballRadius = isMegaSwinging ? 35 : 25;
     ctx.beginPath();
-    ctx.ellipse(0, 26, 10, 7, 0, 0, Math.PI * 2);
+    ctx.arc(0, 0, ballRadius, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    // Shine on club head
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.beginPath();
-    ctx.ellipse(-3, 23, 4, 3, -0.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
 
+    // Spikes
+    ctx.fillStyle = (isBigBullet || isMegaSwinging) ? '#FFF176' : '#546E7A';
+    const numSpikes = 8;
+    const rotation = time / 150 + (isSwinging ? swingPhase * 10 : isMegaSwinging ? megaPhase * 20 : 0);
+    for (let s = 0; s < numSpikes; s++) {
+        ctx.save();
+        ctx.rotate(rotation + (s * Math.PI * 2) / numSpikes);
+        ctx.beginPath();
+        ctx.moveTo(ballRadius - 5, -8);
+        ctx.lineTo(ballRadius + 20, 0);
+        ctx.lineTo(ballRadius - 5, 8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    ctx.restore();
+    ctx.restore();
     ctx.restore();
 
     // Head
@@ -313,7 +435,6 @@ export function drawPlayer(
 
     ctx.restore();
 }
-
 
 /** Draw a monster with limbs, body, and face */
 export function drawMonster(
@@ -356,7 +477,16 @@ export function drawMonster(
 
     ctx.fillStyle = m.monsterType === 'skinny' ? '#FF5252' : (m.monsterType === 'fat' ? '#D32F2F' : '#7E57C2');
     ctx.fillRect(0, 0, e.width, e.height);
-    if (faceImg) ctx.drawImage(faceImg, 2, 2, e.width - 4, e.height - 4);
+
+    // Zombie-like head wobble (tilting from the bottom center)
+    const wobbleAngle = Math.sin(time / 400) * 0.18;
+    if (faceImg) {
+        ctx.save();
+        ctx.translate(e.width / 2, e.height); // Bottom center of face area
+        ctx.rotate(wobbleAngle);
+        ctx.drawImage(faceImg, -e.width / 2 + 2, -e.height + 2, e.width - 4, e.height - 4);
+        ctx.restore();
+    }
 
     ctx.restore();
 }
@@ -393,7 +523,9 @@ export function drawGroundItems(ctx: CanvasRenderingContext2D, items: GroundItem
         // Background circle
         const color = item.powerup === 'bigBullet' ? '#FF6F00'
             : item.powerup === 'fastRun' ? '#00C853'
-                : '#E53935'; // hp
+                : item.powerup === 'shield' ? '#2196F3'
+                    : item.powerup === 'ammo' ? '#FFEB3B'
+                        : '#E53935'; // hp
         ctx.fillStyle = color;
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2;
@@ -403,13 +535,15 @@ export function drawGroundItems(ctx: CanvasRenderingContext2D, items: GroundItem
         ctx.stroke();
 
         // Icon label
-        ctx.fillStyle = '#fff';
+        ctx.fillStyle = (item.powerup === 'ammo') ? '#333' : '#fff';
         ctx.font = `bold ${Math.round(height * 0.55)}px Courier`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         const label = item.powerup === 'bigBullet' ? 'B'
             : item.powerup === 'fastRun' ? 'F'
-                : '♥';
+                : item.powerup === 'shield' ? 'S'
+                    : item.powerup === 'ammo' ? 'A'
+                        : '♥';
         ctx.fillText(label, width / 2, height / 2 + 1);
 
         ctx.restore();
@@ -429,6 +563,8 @@ export interface HUDData {
     stage: number;
     score: number;
     hp: number;
+    ammo: number;
+    shields: number;
     powerups: { bigBullet: number; fastRun: number };
 }
 
@@ -441,17 +577,24 @@ export function drawHUD(ctx: CanvasRenderingContext2D, data: HUDData): void {
     ctx.strokeRect(10, 530, 980, 60);
 
     ctx.fillStyle = 'white';
-    ctx.font = 'bold 20px "Courier New"';
-    ctx.fillText(`WORLD 1-${data.stage}`, 30, 565);
-    ctx.fillText(`SCORE: ${String(data.score).padStart(7, '0')}`, 180, 565);
+    ctx.font = 'bold 18px "Courier New"';
+    ctx.fillText(`WORLD 1-${data.stage}`, 30, 555);
+    ctx.fillText(`SCORE: ${String(data.score).padStart(7, '0')}`, 180, 555);
+
+    // Ammo and Shield status
+    ctx.fillStyle = '#FFEB3B';
+    ctx.fillText(`AMMO: ${data.ammo}`, 30, 580);
+    ctx.fillStyle = '#2196F3';
+    ctx.fillText(`SHLD: ${data.shields}`, 180, 580);
 
     // Health icons
     const safeHp = Math.max(0, Math.min(10, data.hp || 0));
+    ctx.fillStyle = 'white';
     ctx.fillText('LIFE:', 450, 565);
     for (let i = 0; i < safeHp; i++) {
         ctx.fillStyle = '#FF5252';
         ctx.beginPath();
-        ctx.arc(520 + i * 25, 555, 6, 0, Math.PI * 2);
+        ctx.arc(520 + i * 25, 555, 8, 0, Math.PI * 2);
         ctx.fill();
     }
 
@@ -466,6 +609,18 @@ export function drawHUD(ctx: CanvasRenderingContext2D, data: HUDData): void {
         ctx.fillStyle = '#00E676';
         ctx.fillText(`FAST: ${sec}s`, 750, 580);
     }
+}
+
+/** Draw impact sparks */
+export function drawEffects(ctx: CanvasRenderingContext2D, effects: Effect[]): void {
+    for (const eff of effects) {
+        ctx.globalAlpha = eff.life;
+        ctx.fillStyle = eff.color;
+        ctx.beginPath();
+        ctx.arc(eff.pos.x, eff.pos.y, eff.size * eff.life, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1.0;
 }
 
 /** Draw the minimap in the top-right corner */

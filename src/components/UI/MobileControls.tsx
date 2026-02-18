@@ -1,4 +1,5 @@
 import React from 'react';
+import { useGameStore } from '../../store/useGameStore';
 
 interface MobileControlsProps {
     setKey: (code: string, isPressed: boolean) => void;
@@ -17,6 +18,7 @@ const Button = ({ code, label, className = "", onHandlePress }: { code: string, 
 );
 
 export const MobileControls: React.FC<MobileControlsProps> = ({ setKey }) => {
+    const aCharged = useGameStore(s => s.aCharged);
     const handlePress = (code: string, isPressed: boolean) => {
         setKey(code, isPressed);
 
@@ -40,8 +42,9 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ setKey }) => {
 
             {/* Action Buttons */}
             <div className="action-buttons">
-                <Button code="Space" label="A" className="btn-a" onHandlePress={handlePress} />
+                <Button code="KeyA" label="A" className={`btn-a ${aCharged ? 'charged' : ''}`} onHandlePress={handlePress} />
                 <Button code="KeyS" label="S" className="btn-s" onHandlePress={handlePress} />
+                <Button code="KeyD" label="D" className="btn-d" onHandlePress={handlePress} />
             </div>
         </div>
     );

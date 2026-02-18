@@ -119,31 +119,36 @@ function generateObstacles(stage: number): Entity[] {
     return entities;
 }
 
-function createMonster(x: number, baseSpeed: number): Monster {
+export function createMonster(x: number, baseSpeed: number): Monster {
     const rand = Math.random();
     let mType: 'skinny' | 'fat' | 'fly' = 'skinny';
     let mWidth = UNIT_SIZE;
     let mHeight = UNIT_SIZE;
     let mVelX = -baseSpeed;
     let mPosY = 450;
+    let mHP = 2; // Default for skinny
 
     if (rand < 0.33) {
         mType = 'skinny';
-        mWidth = UNIT_SIZE * 0.7;
-        mHeight = UNIT_SIZE * 0.9;
-        mVelX = -baseSpeed * 1.8;
+        mWidth = UNIT_SIZE * 1.05;
+        mHeight = UNIT_SIZE * 1.35;
+        mVelX = -baseSpeed * 0.9;
+        mPosY = GROUND_Y - mHeight;
+        mHP = 2;
     } else if (rand < 0.66) {
         mType = 'fat';
-        mWidth = UNIT_SIZE * 1.5;
-        mHeight = UNIT_SIZE * 1.2;
-        mVelX = -baseSpeed * 0.7;
+        mWidth = UNIT_SIZE * 2.25;
+        mHeight = UNIT_SIZE * 1.8;
+        mVelX = -baseSpeed * 0.49;
         mPosY = GROUND_Y - mHeight;
+        mHP = 3;
     } else {
         mType = 'fly';
         mWidth = UNIT_SIZE;
         mHeight = UNIT_SIZE * 0.8;
         mVelX = -baseSpeed * 1.2;
         mPosY = 200 + Math.random() * 150;
+        mHP = 1;
     }
 
     return {
@@ -154,6 +159,7 @@ function createMonster(x: number, baseSpeed: number): Monster {
         height: mHeight,
         type: 'monster',
         monsterType: mType,
+        hp: mHP,
         direction: -1,
     } as Monster;
 }

@@ -283,8 +283,8 @@ canvas {
 }
 
 .control-btn {
-  width: clamp(50px, 12vw, 80px);
-  height: clamp(50px, 12vw, 80px);
+  width: clamp(37.5px, 9vw, 60px);
+  height: clamp(37.5px, 9vw, 60px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -292,15 +292,15 @@ canvas {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
+  border-radius: 9px;
   color: white;
-  font-size: clamp(1rem, 4vw, 1.8rem);
+  font-size: clamp(0.75rem, 3vw, 1.35rem);
   font-weight: bold;
   cursor: pointer;
   user-select: none;
   touch-action: none;
-  transition: transform 0.1s, background 0.1s;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  transition: transform 0.1s, background 0.1s, box-shadow 0.3s;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
 }
 
 .control-btn:active {
@@ -312,16 +312,41 @@ canvas {
   background: rgba(255, 78, 80, 0.4);
   border-color: rgba(255, 78, 80, 0.5);
   border-radius: 50%;
-  width: clamp(60px, 15vw, 90px);
-  height: clamp(60px, 15vw, 90px);
+  width: clamp(45px, 11vw, 67.5px);
+  height: clamp(45px, 11vw, 67.5px);
 }
 
 .control-btn.btn-s {
   background: rgba(252, 145, 58, 0.4);
   border-color: rgba(252, 145, 58, 0.5);
   border-radius: 50%;
-  width: clamp(60px, 15vw, 90px);
-  height: clamp(60px, 15vw, 90px);
+  width: clamp(45px, 11vw, 67.5px);
+  height: clamp(45px, 11vw, 67.5px);
+}
+
+.control-btn.btn-d {
+  background: rgba(33, 150, 243, 0.4);
+  border-color: rgba(33, 150, 243, 0.5);
+  border-radius: 50%;
+  width: clamp(45px, 11vw, 67.5px);
+  height: clamp(45px, 11vw, 67.5px);
+}
+
+.control-btn.btn-a.charged {
+  background: rgba(255, 215, 0, 0.8);
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.6);
+  transform: scale(1.1);
+  animation: pulse-glow 1s infinite alternate;
+}
+
+@keyframes pulse-glow {
+  from {
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
+  }
+
+  to {
+    box-shadow: 0 0 25px rgba(255, 215, 0, 0.8);
+  }
 }
 
 /* Orientation Specific Fixes */

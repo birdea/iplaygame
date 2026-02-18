@@ -12,6 +12,7 @@ export interface GameState {
   powerups: { bigBullet: number; fastRun: number };
   isPaused: boolean;
   stage: number;
+  aCharged: boolean;
 
   // Actions
   setScreen: (screen: GameState['screen']) => void;
@@ -25,6 +26,7 @@ export interface GameState {
     powerups: { bigBullet: number; fastRun: number };
     isPaused: boolean;
     stage: number;
+    aCharged: boolean;
   }) => void;
 }
 
@@ -36,6 +38,7 @@ export const useGameStore = create<GameState>((set) => ({
   score: 0,
   hp: 3,
   isPaused: false,
+  aCharged: false,
   powerups: {
     bigBullet: 0,
     fastRun: 0,
