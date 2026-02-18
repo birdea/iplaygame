@@ -17,12 +17,112 @@
   font-family: 'Outfit', sans-serif;
 }
 
+/* Base Layout & Utilities */
+.h-screen {
+  height: 100vh;
+}
+
+.w-screen {
+  width: 100vw;
+}
+
+.h-full {
+  height: 100%;
+}
+
+.w-full {
+  width: 100%;
+}
+
+.flex {
+  display: flex;
+}
+
+.flex-col {
+  flex-direction: column;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.justify-center {
+  justify-content: center;
+}
+
+.overflow-hidden {
+  overflow: hidden;
+}
+
+.relative {
+  position: relative;
+}
+
+.absolute {
+  position: absolute;
+}
+
+.inset-0 {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.z-10 {
+  z-index: 10;
+}
+
+.gap-4 {
+  gap: 1rem;
+}
+
+.gap-8 {
+  gap: 2rem;
+}
+
+.text-white {
+  color: white;
+}
+
+.bg-dark {
+  background-color: var(--dark);
+}
+
+.text-primary {
+  color: var(--primary);
+}
+
 body {
-  background: var(--dark);
+  margin: 0;
   color: white;
   overflow: hidden;
   height: 100vh;
   width: 100vw;
+  background: var(--dark);
+}
+
+#root {
+  height: 100%;
+  width: 100%;
+  background-image: url('/bgimage_001.HEIC');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  display: flex;
+  flex-direction: column;
+}
+
+.background-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(26, 26, 46, 0.7);
+  /* Slightly darker for better contrast */
+  z-index: 1;
 }
 
 #root {
@@ -55,7 +155,9 @@ body {
 }
 
 .btn-secondary {
-  background: var(--glass);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border: 1px solid var(--glass-border);
   padding: 12px 24px;
   border-radius: 12px;
@@ -92,5 +194,81 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  background: linear-gradient(to bottom, #87CEEB 0%, #E0F6FF 100%);
+  background: transparent;
+}
+
+/* Mobile Controls */
+.mobile-controls {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 2rem;
+  z-index: 1000;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+@media (min-width: 768px) {
+  .mobile-controls {
+    display: none;
+  }
+}
+
+.d-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 0.5rem;
+  pointer-events: auto;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 1rem;
+  pointer-events: auto;
+}
+
+.control-btn {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 16px;
+  color: white;
+  font-size: 1.5rem;
+  font-weight: bold;
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.control-btn:active {
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.control-btn.btn-a {
+  background: rgba(255, 78, 80, 0.5);
+  border-color: rgba(255, 78, 80, 0.6);
+  border-radius: 50%;
+  width: 80px;
+  height: 80px;
+}
+
+.control-btn.btn-s {
+  background: rgba(252, 145, 58, 0.5);
+  border-color: rgba(252, 145, 58, 0.6);
+  border-radius: 50%;
+  width: 80px;
+  height: 80px;
 }

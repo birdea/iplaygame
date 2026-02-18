@@ -20,5 +20,9 @@ export const useInputs = () => {
         };
     }, []);
 
-    return keys;
+    const setKey = (code: string, isPressed: boolean) => {
+        keys.current[code] = isPressed;
+    };
+
+    return { keys, setKey };
 };

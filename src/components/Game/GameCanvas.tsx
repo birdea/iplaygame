@@ -8,17 +8,22 @@ import {
 } from '../../constants';
 import type { Entity, Block, Monster } from '../../types';
 import confetti from 'canvas-confetti';
+import { MobileControls } from '../UI/MobileControls';
 
 export const GameCanvas: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const keys = useInputs();
-    const { stage, hp, score, setHP, addScore, setScreen, faces, selectedFaceIndex } = useGameStore();
+    const { keys, setKey } = useInputs();
+    const {
+        stage, hp, score, powerups,
+        setHP, addScore, setScreen, activatePowerup,
+        faces, selectedFaceIndex
+    } = useGameStore();
 
     // Stable refs for actions to avoid re-triggering effects
-    const actionsRef = useRef({ setHP, addScore, setScreen });
+    const actionsRef = useRef({ setHP, addScore, setScreen, activatePowerup });
     useEffect(() => {
-        actionsRef.current = { setHP, addScore, setScreen };
-    }, [setHP, addScore, setScreen]);
+        actionsRef.current = { setHP, addScore, setScreen, activatePowerup };
+    }, [setHP, addScore, setScreen, activatePowerup]);
 
     // Game state refs (mutable for performance)
     const playerRef = useRef<Entity>({
@@ -37,6 +42,13 @@ export const GameCanvas: React.FC = () => {
     const gameActive = useRef(true);
     const bossActive = useRef(false);
     const stageRef = useRef(stage);
+
+    // Boss state
+    const bossTactics = useRef({
+        lastAttackTime: 0,
+        state: 'idle' as 'idle' | 'punch' | 'fire',
+        attackDuration: 0
+    });
 
     useEffect(() => {
         stageRef.current = stage;
@@ -79,8 +91,7 @@ export const GameCanvas: React.FC = () => {
                     width: UNIT_SIZE,
                     height: UNIT_SIZE,
                     type: 'block',
-                    blockType: Math.random() > 0.8 ? 'question' : 'brick',
-                    hasItem: true
+                    blockType: Math.random() > 0.5 ? 'question' : 'brick',
                 } as Block);
             }
 
@@ -117,13 +128,15 @@ export const GameCanvas: React.FC = () => {
         let lastShootTime = 0;
 
         const shoot = () => {
+            const isBig = powerups.bigBullet > Date.now();
             bullets.current.push({
                 id: `bullet-${Date.now()}`,
                 pos: { x: playerRef.current.pos.x + playerRef.current.width, y: playerRef.current.pos.y + 20 },
-                vel: { x: BULLET_SPEED, y: 0 },
-                width: 10,
-                height: 10,
-                type: 'bullet'
+                vel: { x: BULLET_SPEED * (isBig ? 1.2 : 1), y: 0 },
+                width: isBig ? 24 : 10,
+                height: isBig ? 24 : 10,
+                type: 'bullet',
+                damage: isBig ? 1.5 : 1
             });
         };
 
@@ -132,32 +145,43 @@ export const GameCanvas: React.FC = () => {
             bossActive.current = true;
             entities.current.push({
                 id: 'boss',
-                pos: { x: BOSS_TRIGGER_X + 200, y: 300 },
-                vel: { x: -3, y: 3 },
+                pos: { x: BOSS_TRIGGER_X + 400, y: 300 },
+                vel: { x: -1, y: 0 },
                 width: BOSS_SIZE,
                 height: BOSS_SIZE,
                 type: 'boss',
-                hp: 10 * stageRef.current,
+                hp: 20 * stageRef.current,
             } as Entity);
         };
 
         const loop = (time: number) => {
             if (!gameActive.current) return;
 
+            // Powerup checks
+            const speedMult = powerups.fastRun > Date.now() ? 1.5 : 1;
+
             // -- 1. INPUT --
+            // Left/Right
             if (keys.current['ArrowLeft'] || keys.current['KeyA']) {
-                playerRef.current.vel.x = -MOVE_SPEED;
+                playerRef.current.vel.x = -MOVE_SPEED * speedMult;
             } else if (keys.current['ArrowRight'] || keys.current['KeyD']) {
-                playerRef.current.vel.x = MOVE_SPEED;
+                playerRef.current.vel.x = MOVE_SPEED * speedMult;
             } else {
                 playerRef.current.vel.x = 0;
             }
 
-            if ((keys.current['ArrowUp'] || keys.current['KeyW'] || keys.current['KeyA']) && onGround.current) {
+            // Jump: Up, W, or Space (Virtual A)
+            if ((keys.current['ArrowUp'] || keys.current['KeyW'] || keys.current['Space']) && onGround.current) {
                 playerRef.current.vel.y = JUMP_FORCE;
                 onGround.current = false;
             }
 
+            // Down: (Can be used for crouching or fast fall if implemented)
+            if (keys.current['ArrowDown'] || keys.current['KeyS']) {
+                // Currently no action for Down in this side-scroller
+            }
+
+            // S for Shoot
             if (keys.current['KeyS'] && time - lastShootTime > 300) {
                 shoot();
                 lastShootTime = time;
@@ -192,8 +216,21 @@ export const GameCanvas: React.FC = () => {
                             p.pos.y = e.pos.y + e.height;
                             p.vel.y = 0;
                             if (e.type === 'block' && (e as Block).blockType === 'question') {
-                                actionsRef.current.addScore(100);
                                 (e as Block).blockType = 'brick';
+                                // Random Item Logic
+                                const rand = Math.random();
+                                if (rand < 0.25) { // bigBullet
+                                    actionsRef.current.activatePowerup('bigBullet', 30000);
+                                    actionsRef.current.addScore(100);
+                                } else if (rand < 0.5) { // fastRun
+                                    actionsRef.current.activatePowerup('fastRun', 30000);
+                                    actionsRef.current.addScore(100);
+                                } else if (rand < 0.75) { // HP +1
+                                    actionsRef.current.setHP(hp + 1);
+                                    actionsRef.current.addScore(100);
+                                } else { // Nothing
+                                    actionsRef.current.addScore(10);
+                                }
                             }
                         }
                     }
@@ -213,17 +250,57 @@ export const GameCanvas: React.FC = () => {
                             p.vel.y = -10;
                             actionsRef.current.addScore(200);
                         } else {
-                            actionsRef.current.setHP(hp - 1); // Note: this uses closure 'hp' which is fine since the loop restarts when hp changes, OR use functional update in store
+                            actionsRef.current.setHP(hp - 1);
                             p.pos.x -= 100;
                         }
                     }
                 }
 
                 if (e.type === 'boss') {
-                    e.pos.x += e.vel.x;
-                    e.pos.y += e.vel.y;
-                    if (e.pos.y < 50 || e.pos.y > 450) e.vel.y *= -1;
-                    if (e.pos.x < BOSS_TRIGGER_X || e.pos.x > STAGE_LENGTH - BOSS_SIZE) e.vel.x *= -1;
+                    const distToPlayer = e.pos.x - p.pos.x;
+
+                    // Boss Movement: Approaches Player
+                    if (distToPlayer > 150) {
+                        e.pos.x -= 1.5;
+                    } else if (distToPlayer < 100) {
+                        e.pos.x += 1;
+                    }
+
+                    // Floating
+                    e.pos.y = 300 + Math.sin(time / 500) * 50;
+
+                    // Boss Attacks
+                    if (time - bossTactics.current.lastAttackTime > 3000) {
+                        const attackType = Math.random() > 0.5 ? 'punch' : 'fire';
+                        bossTactics.current.state = attackType;
+                        bossTactics.current.lastAttackTime = time;
+                        bossTactics.current.attackDuration = 1000;
+
+                        if (attackType === 'fire') {
+                            // Spawn Boss Bullet (Fire)
+                            bullets.current.push({
+                                id: `boss-fire-${Date.now()}`,
+                                pos: { x: e.pos.x - 20, y: e.pos.y + e.height / 2 },
+                                vel: { x: -8, y: 0 },
+                                width: 20,
+                                height: 20,
+                                type: 'boss-bullet'
+                            });
+                        }
+                    }
+
+                    if (bossTactics.current.attackDuration > 0) {
+                        bossTactics.current.attackDuration -= 16;
+                        if (bossTactics.current.attackDuration <= 0) {
+                            bossTactics.current.state = 'idle';
+                        }
+                    }
+
+                    // Punch Attack logic 
+                    if (bossTactics.current.state === 'punch') {
+                        // Boss lunges forward
+                        e.pos.x -= 5;
+                    }
 
                     if (p.pos.x < e.pos.x + e.width &&
                         p.pos.x + p.width > e.pos.x &&
@@ -235,26 +312,49 @@ export const GameCanvas: React.FC = () => {
                 }
             });
 
+            // Bullet collisions
             bullets.current.forEach(b => {
                 b.pos.x += b.vel.x;
-                const boss = entities.current.find(ent => ent.type === 'boss');
-                if (boss && b.pos.x < boss.pos.x + boss.width &&
-                    b.pos.x + b.width > boss.pos.x &&
-                    b.pos.y < boss.pos.y + boss.height &&
-                    b.pos.y + b.height > boss.pos.y) {
+                if (b.type === 'bullet') {
+                    const boss = entities.current.find(ent => ent.type === 'boss');
+                    if (boss && b.pos.x < boss.pos.x + boss.width &&
+                        b.pos.x + b.width > boss.pos.x &&
+                        b.pos.y < boss.pos.y + boss.height &&
+                        b.pos.y + b.height > boss.pos.y) {
 
-                    boss.hp = (boss.hp || 0) - 1;
-                    bullets.current = bullets.current.filter(bul => bul.id !== b.id);
-                    if (boss.hp <= 0) {
-                        entities.current = entities.current.filter(ent => ent.id !== boss.id);
-                        actionsRef.current.addScore(5000);
-                        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-                        gameActive.current = false;
-                        actionsRef.current.setScreen('victory');
+                        boss.hp = (boss.hp || 0) - (b.damage || 1);
+                        bullets.current = bullets.current.filter(bul => bul.id !== b.id);
+                        if (boss.hp <= 0) {
+                            entities.current = entities.current.filter(ent => ent.id !== boss.id);
+                            actionsRef.current.addScore(5000);
+                            confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                            gameActive.current = false;
+                            actionsRef.current.setScreen('victory');
+                        }
+                    }
+                    // Monster kill
+                    entities.current.forEach(ent => {
+                        if (ent.type === 'monster' && b.pos.x < ent.pos.x + ent.width &&
+                            b.pos.x + b.width > ent.pos.x &&
+                            b.pos.y < ent.pos.y + ent.height &&
+                            b.pos.y + b.height > ent.pos.y) {
+                            entities.current = entities.current.filter(e => e.id !== ent.id);
+                            bullets.current = bullets.current.filter(bul => bul.id !== b.id);
+                            actionsRef.current.addScore(200);
+                        }
+                    });
+                } else if (b.type === 'boss-bullet') {
+                    if (b.pos.x < p.pos.x + p.width &&
+                        b.pos.x + b.width > p.pos.x &&
+                        b.pos.y < p.pos.y + p.height &&
+                        b.pos.y + b.height > p.pos.y) {
+                        actionsRef.current.setHP(hp - 1);
+                        bullets.current = bullets.current.filter(bul => bul.id !== b.id);
+                        p.pos.x -= 50;
                     }
                 }
             });
-            bullets.current = bullets.current.filter(b => b.pos.x < cameraX.current + 1200);
+            bullets.current = bullets.current.filter(b => b.pos.x > cameraX.current - 100 && b.pos.x < cameraX.current + 1200);
 
             cameraX.current = Math.max(cameraX.current, p.pos.x - 400);
 
@@ -277,21 +377,36 @@ export const GameCanvas: React.FC = () => {
                     ctx.fillStyle = '#E53935';
                     ctx.fillRect(e.pos.x, e.pos.y, e.width, e.height);
                 } else if (e.type === 'boss') {
-                    ctx.fillStyle = '#1A237E';
+                    ctx.fillStyle = bossTactics.current.state === 'punch' ? '#FF1744' : '#1A237E';
                     ctx.fillRect(e.pos.x, e.pos.y, e.width, e.height);
+
+                    // Boss eye
+                    ctx.fillStyle = 'yellow';
+                    ctx.fillRect(e.pos.x + 20, e.pos.y + 30, 30, 10);
+
+                    // HP Bar
                     ctx.fillStyle = 'red';
                     ctx.fillRect(e.pos.x, e.pos.y - 40, e.width, 10);
                     ctx.fillStyle = 'green';
-                    ctx.fillRect(e.pos.x, e.pos.y - 40, (e.hp! / (10 * stageRef.current)) * e.width, 10);
+                    ctx.fillRect(e.pos.x, e.pos.y - 40, (e.hp! / (20 * stageRef.current)) * e.width, 10);
+
+                    if (bossTactics.current.state === 'fire') {
+                        ctx.fillStyle = 'orange';
+                        ctx.beginPath();
+                        ctx.arc(e.pos.x - 10, e.pos.y + e.height / 2, 15, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
                 }
             });
 
-            ctx.fillStyle = 'white';
             bullets.current.forEach(b => {
-                ctx.beginPath(); ctx.arc(b.pos.x, b.pos.y, 5, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = b.type === 'boss-bullet' ? '#FF5722' : 'white';
+                ctx.beginPath();
+                ctx.arc(b.pos.x + b.width / 2, b.pos.y + b.height / 2, b.width / 2, 0, Math.PI * 2);
+                ctx.fill();
             });
 
-            ctx.fillStyle = '#D32F2F';
+            ctx.fillStyle = powerups.bigBullet > Date.now() ? '#F44336' : '#D32F2F';
             ctx.fillRect(p.pos.x, p.pos.y + 30, p.width, p.height - 30);
 
             if (faceImage.current) {
@@ -307,11 +422,23 @@ export const GameCanvas: React.FC = () => {
             ctx.restore();
 
             // HUD
-            ctx.fillStyle = 'black';
+            ctx.fillStyle = 'white';
             ctx.font = 'bold 24px Outfit';
-            ctx.fillText(`STAGE: ${stageRef.current}`, 20, 40);
-            ctx.fillText(`SCORE: ${score}`, 20, 70);
-            ctx.fillText(`${'❤️'.repeat(hp)}`, 20, 100);
+            ctx.fillText(`STAGE: ${stageRef.current}`, 20, 140);
+            ctx.fillText(`SCORE: ${score}`, 20, 170);
+            ctx.fillText(`${'❤️'.repeat(hp)}`, 20, 110);
+
+            // Powerup HUD
+            if (powerups.bigBullet > Date.now()) {
+                const sec = Math.ceil((powerups.bigBullet - Date.now()) / 1000);
+                ctx.fillStyle = '#FFD600';
+                ctx.fillText(`BIG BULLET: ${sec}s`, 20, 210);
+            }
+            if (powerups.fastRun > Date.now()) {
+                const sec = Math.ceil((powerups.fastRun - Date.now()) / 1000);
+                ctx.fillStyle = '#00E676';
+                ctx.fillText(`FAST RUN: ${sec}s`, 20, 240);
+            }
 
             if (hp <= 0) {
                 gameActive.current = false;
@@ -323,11 +450,12 @@ export const GameCanvas: React.FC = () => {
 
         frameId = requestAnimationFrame(loop);
         return () => cancelAnimationFrame(frameId);
-    }, [hp, score, keys]);
+    }, [hp, score, powerups, keys]);
 
     return (
         <div className="game-container">
             <canvas ref={canvasRef} width={1000} height={600} className="rounded-xl shadow-2xl border-4 border-white/20 bg-sky-200" />
+            <MobileControls setKey={setKey} />
         </div>
     );
 };
