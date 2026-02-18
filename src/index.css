@@ -177,11 +177,9 @@ body {
 #root {
   height: 100%;
   width: 100%;
-  background-image: url('/public/main_logo.png');
+  background-image: url('/main_logo.png');
   background-size: cover;
   background-position: center;
-  background-repeat: no-repeat;
-  background-attachment: fixed;
 }
 
 .background-overlay {
@@ -273,7 +271,7 @@ canvas {
 .d-pad {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
   gap: 0.5rem;
   pointer-events: auto;
 }

@@ -28,7 +28,9 @@ export const Menu: React.FC = () => {
                 <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={() => setScreen('game')}
+                    onClick={() => {
+                        useGameStore.getState().resetGame();
+                    }}
                     className="btn-primary flex items-center justify-center gap-2 text-lg md:text-xl w-full"
                 >
                     <Play fill="white" size={24} /> PLAY
