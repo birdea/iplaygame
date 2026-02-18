@@ -1,28 +1,31 @@
 import { create } from 'zustand';
 
 export interface GameState {
+  // UI navigation (authoritative here)
   screen: 'menu' | 'settings' | 'game' | 'gameover' | 'victory';
   faces: string[];
   selectedFaceIndex: number;
-  stage: number;
-  score: number;
+
+  // Mirrored from game loop (read-only for React HUD consumption)
   hp: number;
+  score: number;
+  powerups: { bigBullet: number; fastRun: number };
   isPaused: boolean;
-  powerups: {
-    bigBullet: number; // timestamp until expiration
-    fastRun: number;   // timestamp until expiration
-  };
+  stage: number;
 
   // Actions
-  setScreen: (screen: 'menu' | 'settings' | 'game' | 'gameover' | 'victory') => void;
-  togglePaused: (paused?: boolean) => void;
+  setScreen: (screen: GameState['screen']) => void;
   addFace: (face: string) => void;
   selectFace: (index: number) => void;
   resetGame: () => void;
   nextStage: () => void;
-  setHP: (hp: number) => void;
-  addScore: (points: number) => void;
-  activatePowerup: (type: 'bigBullet' | 'fastRun', duration: number) => void;
+  syncFromLoop: (data: {
+    hp: number;
+    score: number;
+    powerups: { bigBullet: number; fastRun: number };
+    isPaused: boolean;
+    stage: number;
+  }) => void;
 }
 
 export const useGameStore = create<GameState>((set) => ({
@@ -38,11 +41,7 @@ export const useGameStore = create<GameState>((set) => ({
     fastRun: 0,
   },
 
-  setScreen: (screen) => set({ screen, isPaused: false }),
-
-  togglePaused: (paused) => set((state) => ({
-    isPaused: paused !== undefined ? paused : !state.isPaused
-  })),
+  setScreen: (screen) => set({ screen }),
 
   addFace: (face) => set((state) => {
     if (state.faces.length >= 10) {
@@ -60,19 +59,10 @@ export const useGameStore = create<GameState>((set) => ({
     hp: 3,
     screen: 'game',
     isPaused: false,
-    powerups: { bigBullet: 0, fastRun: 0 }
+    powerups: { bigBullet: 0, fastRun: 0 },
   }),
 
   nextStage: () => set((state) => ({ stage: Math.min(state.stage + 1, 3) })),
 
-  setHP: (hp) => set({ hp }),
-
-  addScore: (points) => set((state) => ({ score: state.score + points })),
-
-  activatePowerup: (type, duration) => set((state) => ({
-    powerups: {
-      ...state.powerups,
-      [type]: Date.now() + duration
-    }
-  })),
+  syncFromLoop: (data) => set(data),
 }));

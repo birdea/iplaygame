@@ -1,21 +1,25 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useGameStore } from '../../store/useGameStore';
 import { useInputs } from '../../hooks/useInputs';
 import {
     MOVE_SPEED, JUMP_FORCE, BOSS_TRIGGER_X, AUTO_SCROLL_SPEED,
-    PLAYER_WIDTH, PLAYER_HEIGHT, INVINCIBILITY_DURATION
 } from '../../constants';
-import type { Entity, Block, Monster } from '../../types';
+import type { Block, Monster } from '../../types';
 import confetti from 'canvas-confetti';
 import { MobileControls } from '../UI/MobileControls';
 import { Pause } from 'lucide-react';
 
-// Extracted modules
+// Extracted game modules
 import { applyVerticalPhysics, applyHorizontalPhysics, aabbOverlap } from './physics';
 import { generateStage } from './stageGenerator';
-import { drawBackground, drawBlock, drawDragon, drawPlayer, drawMonster, drawBullets, drawBossHPBar, drawHUD, drawMinimap } from './renderer';
-import { createBossTactics, createBossEntity, updateBoss } from './bossAI';
+import {
+    drawBackground, drawBlock, drawDragon, drawPlayer,
+    drawMonster, drawBullets, drawBossHPBar, drawHUD, drawMinimap,
+} from './renderer';
+import { createBossEntity, updateBoss } from './bossAI';
 import { createBullet, updateMonsters, updateBullets } from './entityManager';
+import { createInitialGameState, createGameActions } from './gameState';
+import type { GameLoopState, GameActions } from './gameState';
 
 const MINIMAP_WIDTH = 150;
 const MINIMAP_HEIGHT = 90;
@@ -23,58 +27,52 @@ const MINIMAP_HEIGHT = 90;
 export const GameCanvas: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const { keys, setKey } = useInputs();
-    const {
-        stage, hp, score, powerups,
-        setHP, addScore, setScreen, activatePowerup,
-        faces, selectedFaceIndex, isPaused, togglePaused
-    } = useGameStore();
 
-    // Stable refs for actions to avoid re-triggering effects
-    const actionsRef = useRef({ setHP, addScore, setScreen, activatePowerup });
-    useEffect(() => {
-        actionsRef.current = { setHP, addScore, setScreen, activatePowerup };
-    }, [setHP, addScore, setScreen, activatePowerup]);
+    // Zustand selectors – only UI-facing state
+    const setScreen = useGameStore(s => s.setScreen);
+    const faces = useGameStore(s => s.faces);
+    const selectedFaceIndex = useGameStore(s => s.selectedFaceIndex);
 
-    // Game state refs (mutable for performance)
-    const statsRef = useRef({ hp, score, powerups, isPaused });
-    useEffect(() => {
-        statsRef.current = { hp, score, powerups, isPaused };
-    }, [hp, score, powerups, isPaused]);
+    // Read-only mirrors from Zustand (driven by syncFromLoop)
+    const storeHP = useGameStore(s => s.hp);
+    const storeScore = useGameStore(s => s.score);
+    const storeStage = useGameStore(s => s.stage);
+    const storeIsPaused = useGameStore(s => s.isPaused);
 
-    const lastShootTime = useRef(0);
-    const lastEscTime = useRef(0);
+    // -----------------------------------------------------------------------
+    // Single GameLoopState ref (replaces 18 individual refs)
+    // -----------------------------------------------------------------------
+    const gsRef = useRef<GameLoopState>(null!);
+    const actionsRef = useRef<GameActions>(null!);
 
-    const playerRef = useRef<Entity>({
-        id: 'player',
-        pos: { x: 100, y: 300 },
-        vel: { x: 0, y: 0 },
-        width: PLAYER_WIDTH,
-        height: PLAYER_HEIGHT,
-        type: 'player'
-    });
+    if (gsRef.current === null) {
+        const store = useGameStore.getState();
+        const gs = createInitialGameState(store.stage);
+        gs.hp = store.hp;
+        gs.score = store.score;
+        gs.powerups = { ...store.powerups };
+        gs.entities = generateStage(store.stage);
+        gsRef.current = gs;
 
-    const invincibleUntil = useRef(0);
+        const syncFn = () => {
+            const g = gsRef.current;
+            useGameStore.getState().syncFromLoop({
+                hp: g.hp,
+                score: g.score,
+                powerups: g.powerups,
+                isPaused: g.isPaused,
+                stage: g.stage,
+            });
+        };
+        actionsRef.current = createGameActions(gs, syncFn);
+    }
 
-    const takeDamage = useCallback((amount: number = 1) => {
-        if (Date.now() < invincibleUntil.current) return false;
-        actionsRef.current.setHP(statsRef.current.hp - amount);
-        invincibleUntil.current = Date.now() + INVINCIBILITY_DURATION;
-        return true;
-    }, []);
+    // Adapter ref for bossAI setTimeout (needs ref-like { current } shape)
+    const gameActiveRef = useRef(true);
 
-    const onGround = useRef(false);
-    const cameraX = useRef(0);
-    const entities = useRef<Entity[]>([]);
-    const bullets = useRef<Entity[]>([]);
-    const gameActive = useRef(true);
-    const bossActive = useRef(false);
-    const stageRef = useRef(stage);
-    const bossTactics = useRef(createBossTactics());
-
-    useEffect(() => {
-        stageRef.current = stage;
-    }, [stage]);
-
+    // -----------------------------------------------------------------------
+    // Asset refs (DOM/browser resources, NOT game state)
+    // -----------------------------------------------------------------------
     const faceImage = useRef<HTMLImageElement | null>(null);
     const monsterFaces = useRef<(HTMLImageElement | null)[]>([null, null, null]);
 
@@ -88,7 +86,7 @@ export const GameCanvas: React.FC = () => {
         const mFaces = [
             '/monster/monster_face_1.png',
             '/monster/monster_face_2.png',
-            '/monster/monster_face_3.png'
+            '/monster/monster_face_3.png',
         ];
         mFaces.forEach((src, idx) => {
             const img = new Image();
@@ -97,17 +95,9 @@ export const GameCanvas: React.FC = () => {
         });
     }, [faces, selectedFaceIndex]);
 
-    // Generate Stage
-    useEffect(() => {
-        entities.current = generateStage(stage);
-        playerRef.current.pos = { x: 100, y: 300 };
-        playerRef.current.vel = { x: 0, y: 0 };
-        cameraX.current = 0;
-        bossActive.current = false;
-        gameActive.current = true;
-    }, [stage]);
-
-    // Game Loop - Ref-based for perfect stability (no restarts)
+    // -----------------------------------------------------------------------
+    // Game Loop
+    // -----------------------------------------------------------------------
     const loopRef = useRef<(time: number) => void>(null);
 
     loopRef.current = (time: number) => {
@@ -117,117 +107,121 @@ export const GameCanvas: React.FC = () => {
             const ctx = canvas.getContext('2d');
             if (!ctx) return;
 
+            const gs = gsRef.current;
+            const actions = actionsRef.current;
+
+            // Keep adapter ref in sync for bossAI setTimeout
+            gameActiveRef.current = gs.gameActive;
+
             // -- 0. INPUTS & PAUSE --
-            if (keys.current['Escape'] && time - lastEscTime.current > 300) {
-                togglePaused();
-                lastEscTime.current = time;
+            if (keys.current['Escape'] && time - gs.lastEscTime > 300) {
+                actions.togglePaused();
+                gs.lastEscTime = time;
             }
 
-            if (!gameActive.current) return;
+            if (!gs.gameActive) return;
 
-            const isPausedLoop = statsRef.current.isPaused;
-
-            if (!isPausedLoop) {
+            if (!gs.isPaused) {
                 // -- 1. LOGIC UPDATES --
-                cameraX.current += AUTO_SCROLL_SPEED;
-                const speedMult = statsRef.current.powerups.fastRun > Date.now() ? 1.6 : 1;
-                const p = playerRef.current;
+                gs.cameraX += AUTO_SCROLL_SPEED;
+                const speedMult = gs.powerups.fastRun > Date.now() ? 1.6 : 1;
+                const p = gs.player;
 
                 // Input handling
                 p.vel.x = 0;
                 if (keys.current['ArrowLeft'] || keys.current['KeyA']) p.vel.x = -MOVE_SPEED * speedMult;
                 if (keys.current['ArrowRight'] || keys.current['KeyD']) p.vel.x = MOVE_SPEED * speedMult;
 
-                if ((keys.current['ArrowUp'] || keys.current['KeyW'] || keys.current['Space']) && onGround.current) {
+                if ((keys.current['ArrowUp'] || keys.current['KeyW'] || keys.current['Space']) && gs.onGround) {
                     p.vel.y = JUMP_FORCE;
-                    onGround.current = false;
+                    gs.onGround = false;
                 }
 
                 // Shoot
-                if (keys.current['KeyS'] && time - lastShootTime.current > 300) {
-                    const isBig = statsRef.current.powerups.bigBullet > Date.now();
-                    bullets.current.push(createBullet(p, isBig));
-                    lastShootTime.current = time;
+                if (keys.current['KeyS'] && time - gs.lastShootTime > 300) {
+                    const isBig = gs.powerups.bigBullet > Date.now();
+                    gs.bullets.push(createBullet(p, isBig));
+                    gs.lastShootTime = time;
                 }
 
                 // Physics
-                const vertResult = applyVerticalPhysics(p, entities.current);
-                onGround.current = vertResult.onGround;
+                const vertResult = applyVerticalPhysics(p, gs.entities);
+                gs.onGround = vertResult.onGround;
 
                 if (vertResult.hitQuestion) {
                     vertResult.hitQuestion.blockType = 'brick';
                     const rand = Math.random();
-                    if (rand < 0.25) actionsRef.current.activatePowerup('bigBullet', 30000);
-                    else if (rand < 0.5) actionsRef.current.activatePowerup('fastRun', 30000);
-                    else if (rand < 0.75) actionsRef.current.setHP(statsRef.current.hp + 1);
-                    actionsRef.current.addScore(100);
+                    if (rand < 0.25) actions.activatePowerup('bigBullet', 30000);
+                    else if (rand < 0.5) actions.activatePowerup('fastRun', 30000);
+                    else if (rand < 0.75) actions.setHP(gs.hp + 1);
+                    actions.addScore(100);
                 }
 
-                applyHorizontalPhysics(p, entities.current);
+                applyHorizontalPhysics(p, gs.entities);
 
                 // Fall Death
                 if (p.pos.y > 600) {
-                    takeDamage(1);
-                    const groundBlocks = entities.current.filter(e => e.type === 'block' && (e as Block).blockType === 'ground');
-                    const nextSafe = groundBlocks.find(e => e.pos.x > cameraX.current + 100) || groundBlocks[0];
-                    p.pos = nextSafe ? { x: nextSafe.pos.x, y: nextSafe.pos.y - 100 } : { x: cameraX.current + 100, y: 300 };
+                    actions.takeDamage(1);
+                    const groundBlocks = gs.entities.filter(e => e.type === 'block' && (e as Block).blockType === 'ground');
+                    const nextSafe = groundBlocks.find(e => e.pos.x > gs.cameraX + 100) || groundBlocks[0];
+                    p.pos = nextSafe ? { x: nextSafe.pos.x, y: nextSafe.pos.y - 100 } : { x: gs.cameraX + 100, y: 300 };
                     p.vel = { x: 0, y: 0 };
                 }
 
                 // Camera boundary
-                if (p.pos.x < cameraX.current) p.pos.x = cameraX.current;
+                if (p.pos.x < gs.cameraX) p.pos.x = gs.cameraX;
 
                 // Boss trigger
-                if (p.pos.x > BOSS_TRIGGER_X && !bossActive.current) {
-                    bossActive.current = true;
-                    entities.current.push(createBossEntity(stageRef.current));
+                if (p.pos.x > BOSS_TRIGGER_X && !gs.bossActive) {
+                    gs.bossActive = true;
+                    gs.entities.push(createBossEntity(gs.stage));
                 }
 
                 // Monster logic
-                entities.current = updateMonsters(
-                    entities.current, p, takeDamage,
-                    (amt) => actionsRef.current.addScore(amt),
+                gs.entities = updateMonsters(
+                    gs.entities, p, (amt) => actions.takeDamage(amt),
+                    (amt) => actions.addScore(amt),
                 );
 
                 // Boss AI
-                const boss = entities.current.find(e => e.type === 'boss');
+                const boss = gs.entities.find(e => e.type === 'boss');
                 if (boss) {
                     updateBoss(
-                        boss, p, bossTactics.current, time, stageRef.current, gameActive,
-                        (bullet) => { bullets.current.push(bullet); },
+                        boss, p, gs.bossTactics, time, gs.stage, gameActiveRef,
+                        (bullet) => { gs.bullets.push(bullet); },
                     );
                     // Boss-player collision
                     if (aabbOverlap(p, boss)) {
-                        if (takeDamage(1)) p.pos.x -= 200;
+                        if (actions.takeDamage(1)) p.pos.x -= 200;
                     }
                 }
 
                 // Bullet collisions
-                const bulletResult = updateBullets(bullets.current, entities.current, p, takeDamage, cameraX.current);
-                entities.current = bulletResult.entities;
-                bullets.current = bulletResult.bullets;
+                const bulletResult = updateBullets(gs.bullets, gs.entities, p, (amt) => actions.takeDamage(amt), gs.cameraX);
+                gs.entities = bulletResult.entities;
+                gs.bullets = bulletResult.bullets;
 
                 if (bulletResult.bossDefeated) {
-                    actionsRef.current.addScore(bulletResult.scoreGained);
+                    actions.addScore(bulletResult.scoreGained);
                     confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-                    gameActive.current = false;
-                    actionsRef.current.setScreen('victory');
+                    gs.gameActive = false;
+                    setScreen('victory');
                 } else if (bulletResult.scoreGained > 0) {
-                    actionsRef.current.addScore(bulletResult.scoreGained);
+                    actions.addScore(bulletResult.scoreGained);
                 }
 
-                cameraX.current = Math.max(cameraX.current, p.pos.x - 400);
+                gs.cameraX = Math.max(gs.cameraX, p.pos.x - 400);
             }
 
             // -- 2. RENDER --
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            drawBackground(ctx, cameraX.current, time);
+            drawBackground(ctx, gs.cameraX, time);
 
             ctx.save();
-            ctx.translate(-cameraX.current, 0);
+            ctx.translate(-gs.cameraX, 0);
 
             // Entities
-            entities.current.forEach(e => {
+            gs.entities.forEach(e => {
                 if (e.type === 'block') {
                     drawBlock(ctx, e.pos.x, e.pos.y, e.width, e.height, (e as Block).blockType);
                 } else if (e.type === 'monster') {
@@ -235,44 +229,44 @@ export const GameCanvas: React.FC = () => {
                     const mFace = monsterFaces.current[m.monsterType === 'skinny' ? 0 : m.monsterType === 'fat' ? 1 : 2];
                     drawMonster(ctx, e, m, time, mFace);
                 } else if (e.type === 'boss') {
-                    drawDragon(ctx, e.pos.x, e.pos.y, e.width, e.height, time, bossTactics.current.state);
+                    drawDragon(ctx, e.pos.x, e.pos.y, e.width, e.height, time, gs.bossTactics.state);
                     drawBossHPBar(ctx, e);
                 }
             });
 
             // Bullets
-            drawBullets(ctx, bullets.current);
+            drawBullets(ctx, gs.bullets);
 
             // Player
-            const p = playerRef.current;
-            const isMoving = !statsRef.current.isPaused && (keys.current['ArrowLeft'] || keys.current['KeyA'] || keys.current['ArrowRight'] || keys.current['KeyD']);
+            const p = gs.player;
+            const isMoving = !gs.isPaused && (keys.current['ArrowLeft'] || keys.current['KeyA'] || keys.current['ArrowRight'] || keys.current['KeyD']);
 
             ctx.save();
             ctx.shadowColor = 'black';
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 3;
             ctx.shadowOffsetY = 3;
-            drawPlayer(ctx, p, time, isMoving, faceImage.current, Date.now() < invincibleUntil.current, statsRef.current.powerups);
+            drawPlayer(ctx, p, time, isMoving, faceImage.current, Date.now() < gs.invincibleUntil, gs.powerups);
             ctx.restore();
 
             ctx.restore();
 
             // HUD
             drawHUD(ctx, {
-                stage: stageRef.current,
-                score: statsRef.current.score,
-                hp: statsRef.current.hp,
-                powerups: statsRef.current.powerups,
+                stage: gs.stage,
+                score: gs.score,
+                hp: gs.hp,
+                powerups: gs.powerups,
             });
 
             // Minimap
-            const bossEnt = entities.current.find(ev => ev.type === 'boss');
-            drawMinimap(ctx, canvas.width, MINIMAP_WIDTH, MINIMAP_HEIGHT, cameraX.current, p, bossEnt);
+            const bossEnt = gs.entities.find(ev => ev.type === 'boss');
+            drawMinimap(ctx, canvas.width, MINIMAP_WIDTH, MINIMAP_HEIGHT, gs.cameraX, p, bossEnt);
 
             // Death check
-            if (statsRef.current.hp <= 0) {
-                gameActive.current = false;
-                actionsRef.current.setScreen('gameover');
+            if (gs.hp <= 0) {
+                gs.gameActive = false;
+                setScreen('gameover');
             }
         } catch (err) {
             console.error("Game Loop Error:", err);
@@ -296,7 +290,7 @@ export const GameCanvas: React.FC = () => {
             {/* Top-Left Status Bar (HUD) */}
             <div className="hud-container">
                 <button
-                    onClick={() => togglePaused()}
+                    onClick={() => actionsRef.current.togglePaused()}
                     className="pause-btn"
                     title="Pause Game (Esc)"
                 >
@@ -306,7 +300,7 @@ export const GameCanvas: React.FC = () => {
                 <div className="hud-card">
                     <div className="hud-item">
                         <span className="hud-label">World</span>
-                        <span className="hud-value">1-{stage}</span>
+                        <span className="hud-value">1-{storeStage}</span>
                     </div>
 
                     <div className="hud-divider" />
@@ -314,7 +308,7 @@ export const GameCanvas: React.FC = () => {
                     <div className="hud-item">
                         <span className="hud-label">Score</span>
                         <span className="hud-value" style={{ color: 'var(--accent)' }}>
-                            {String(score).padStart(7, '0')}
+                            {String(storeScore).padStart(7, '0')}
                         </span>
                     </div>
 
@@ -323,10 +317,10 @@ export const GameCanvas: React.FC = () => {
                     <div className="hud-item">
                         <span className="hud-label">Life</span>
                         <div className="health-bar-container">
-                            {[...Array(Math.max(3, hp))].map((_, i) => (
+                            {[...Array(Math.max(3, storeHP))].map((_, i) => (
                                 <div
                                     key={i}
-                                    className={`health-segment ${i < hp ? 'active' : ''}`}
+                                    className={`health-segment ${i < storeHP ? 'active' : ''}`}
                                 />
                             ))}
                         </div>
@@ -336,7 +330,7 @@ export const GameCanvas: React.FC = () => {
 
             <MobileControls setKey={setKey} />
 
-            {isPaused && (
+            {storeIsPaused && (
                 <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[2000] p-4">
                     <div className="glass-morphism p-8 max-w-sm w-full text-center space-y-6">
                         <h2 className="text-4xl font-black text-white">PAUSED</h2>
@@ -349,7 +343,7 @@ export const GameCanvas: React.FC = () => {
                                 CONFIRM & STOP
                             </button>
                             <button
-                                onClick={() => togglePaused(false)}
+                                onClick={() => actionsRef.current.togglePaused(false)}
                                 className="btn-secondary w-full text-lg"
                             >
                                 CONTINUE
