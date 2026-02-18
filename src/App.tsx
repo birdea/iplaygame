@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { useGameStore } from './components/core/store/useGameStore';
 import { Menu } from './components/ui/Menu';
 import { Settings } from './components/ui/Settings';
-import { GameCanvas } from './components/game/game-canvas';
+import { GameCanvas } from './components/game/GameCanvas';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import bgm1 from './assets/audio/bgm_001.m4a';
