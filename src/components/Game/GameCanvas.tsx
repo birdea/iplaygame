@@ -4,7 +4,7 @@ import { useInputs } from '../../hooks/useInputs';
 import {
     UNIT_SIZE, STAGE_LENGTH, BOSS_TRIGGER_X, BOSS_SIZE,
     GRAVITY, JUMP_FORCE, MOVE_SPEED, BULLET_SPEED,
-    PLAYER_WIDTH, PLAYER_HEIGHT, AUTO_SCROLL_SPEED, COLORS,
+    COLORS,
     INVINCIBILITY_DURATION
 } from '../../constants';
 import type { Entity, Block, Monster } from '../../types';
@@ -17,65 +17,26 @@ export const GameCanvas: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const { keys, setKey } = useInputs();
     const {
-        stage, hp, score, powerups,
-        setHP, addScore, setScreen, activatePowerup,
-        faces, selectedFaceIndex, isPaused, togglePaused
+        stage, hp, score,
+        setScreen,
+        faces, selectedFaceIndex, isPaused, togglePaused,
+        initializeStage
     } = useGameStore();
-
-    // Stable refs for actions to avoid re-triggering effects
-    const actionsRef = useRef({ setHP, addScore, setScreen, activatePowerup });
-    useEffect(() => {
-        actionsRef.current = { setHP, addScore, setScreen, activatePowerup };
-    }, [setHP, addScore, setScreen, activatePowerup]);
-
-    // Game state refs (mutable for performance)
-    const statsRef = useRef({ hp, score, powerups, isPaused });
-    useEffect(() => {
-        statsRef.current = { hp, score, powerups, isPaused };
-    }, [hp, score, powerups, isPaused]);
 
     const lastShootTime = useRef(0);
     const lastEscTime = useRef(0);
-
-    const playerRef = useRef<Entity>({
-        id: 'player',
-        pos: { x: 100, y: 300 },
-        vel: { x: 0, y: 0 },
-        width: PLAYER_WIDTH,
-        height: PLAYER_HEIGHT,
-        type: 'player'
-    });
-
-    const invincibleUntil = useRef(0);
+    const gameActive = useRef(true);
 
     const takeDamage = useCallback((amount: number = 1) => {
-        if (Date.now() < invincibleUntil.current) return false;
-        actionsRef.current.setHP(statsRef.current.hp - amount);
-        invincibleUntil.current = Date.now() + INVINCIBILITY_DURATION;
+        const state = useGameStore.getState();
+        if (Date.now() < state.invincibleUntil) return false;
+
+        state.setHP(Math.max(0, state.hp - amount));
+        state.setInvincibleUntil(Date.now() + INVINCIBILITY_DURATION);
         return true;
     }, []);
 
-    const onGround = useRef(false);
-    const cameraX = useRef(0);
-    const entities = useRef<Entity[]>([]);
-    const bullets = useRef<Entity[]>([]);
-    const gameActive = useRef(true);
-    const bossActive = useRef(false);
-    const stageRef = useRef(stage);
-
-    // Boss state
-    const bossTactics = useRef({
-        lastAttackTime: 0,
-        state: 'idle' as 'idle' | 'punch' | 'fire',
-        attackDuration: 0
-    });
-
-    useEffect(() => {
-        stageRef.current = stage;
-    }, [stage]);
-
     const faceImage = useRef<HTMLImageElement | null>(null);
-
     const monsterFaces = useRef<(HTMLImageElement | null)[]>([null, null, null]);
 
     useEffect(() => {
@@ -131,8 +92,8 @@ export const GameCanvas: React.FC = () => {
         }
 
         // Difficulty scaling
-        const monsterChance = (0.15 + (stageRef.current - 1) * 0.1) * 2;
-        const monsterSpeed = 2 + (stageRef.current - 1) * 1.5;
+        const monsterChance = (0.15 + (stage - 1) * 0.1) * 2;
+        const monsterSpeed = 2 + (stage - 1) * 1.5;
 
         // Monsters and Bricks
         for (let bx = 500; bx < BOSS_TRIGGER_X - 500; bx += UNIT_SIZE * 2) {
@@ -188,13 +149,10 @@ export const GameCanvas: React.FC = () => {
             }
         }
 
-        entities.current = newEntities;
-        playerRef.current.pos = { x: 100, y: 300 };
-        playerRef.current.vel = { x: 0, y: 0 };
-        cameraX.current = 0;
-        bossActive.current = false;
+        initializeStage(newEntities);
         gameActive.current = true;
-    }, [stage]);
+    }, [stage, initializeStage]);
+
 
     // Helper: Draw Dragon (Flipped to face Left)
     const drawDragon = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, time: number, state: string) => {
@@ -388,14 +346,15 @@ export const GameCanvas: React.FC = () => {
         const armCycle = isMoving ? Math.sin(time / 100 + Math.PI) : 0;
 
         // Invincibility Blinking
-        const isInvincible = Date.now() < invincibleUntil.current;
+        const { invincibleUntil, powerups } = useGameStore.getState();
+        const isInvincible = Date.now() < invincibleUntil;
         if (isInvincible && Math.floor(time / 100) % 2 === 0) return;
 
         ctx.save();
         ctx.translate(pos.x, pos.y);
 
         // Body Color (Active Powerup check)
-        const isBigBullet = statsRef.current.powerups.bigBullet > Date.now();
+        const isBigBullet = powerups.bigBullet > Date.now();
         const bodyColor = isBigBullet ? '#F44336' : '#D32F2F';
 
         // 2. Draw Legs
@@ -473,33 +432,32 @@ export const GameCanvas: React.FC = () => {
 
             if (!gameActive.current) return;
 
-            const isPausedLoop = statsRef.current.isPaused;
+            const state = useGameStore.getState();
+            const { isPaused: isPausedLoop, cameraX, player: p, onGround, powerups, bullets, entities, bossActive, bossTactics, stage: currentStage } = state;
 
             if (!isPausedLoop) {
                 // -- 1. LOGIC UPDATES --
-                cameraX.current += AUTO_SCROLL_SPEED;
-                const speedMult = statsRef.current.powerups.fastRun > Date.now() ? 1.6 : 1;
+                const speedMult = powerups.fastRun > Date.now() ? 1.6 : 1;
 
-                const p = playerRef.current;
                 p.vel.x = 0;
                 if (keys.current['ArrowLeft'] || keys.current['KeyA']) p.vel.x = -MOVE_SPEED * speedMult;
                 if (keys.current['ArrowRight'] || keys.current['KeyD']) p.vel.x = MOVE_SPEED * speedMult;
 
-                if ((keys.current['ArrowUp'] || keys.current['KeyW'] || keys.current['Space']) && onGround.current) {
+                if ((keys.current['ArrowUp'] || keys.current['KeyW'] || keys.current['Space']) && onGround) {
                     p.vel.y = JUMP_FORCE;
-                    onGround.current = false;
+                    state.setOnGround(false);
                 }
 
                 // Shoot
                 if (keys.current['KeyS'] && time - lastShootTime.current > 300) {
-                    const isBig = statsRef.current.powerups.bigBullet > Date.now();
-                    bullets.current.push({
+                    const isBig = powerups.bigBullet > Date.now();
+                    state.setBullets(prev => [...prev, {
                         id: `bullet-${Date.now()}-${Math.random()}`,
                         pos: { x: p.pos.x + p.width, y: p.pos.y + 20 },
                         vel: { x: BULLET_SPEED * (isBig ? 1.2 : 1), y: 0 },
                         width: isBig ? 30 : 12, height: isBig ? 30 : 12,
                         type: 'bullet', damage: isBig ? 2 : 1
-                    });
+                    }]);
                     lastShootTime.current = time;
                 }
 
@@ -508,31 +466,32 @@ export const GameCanvas: React.FC = () => {
                 p.pos.y += p.vel.y;
 
                 // Vertical Collisions
-                onGround.current = false;
-                entities.current.forEach(e => {
+                let nextOnGround = false;
+                entities.forEach(e => {
                     if (e.type === 'block') {
                         if (p.pos.x < e.pos.x + e.width && p.pos.x + p.width > e.pos.x &&
                             p.pos.y < e.pos.y + e.height && p.pos.y + p.height > e.pos.y) {
                             if (p.vel.y > 0 && p.pos.y + p.height - p.vel.y <= e.pos.y + 10) {
-                                p.pos.y = e.pos.y - p.height; p.vel.y = 0; onGround.current = true;
+                                p.pos.y = e.pos.y - p.height; p.vel.y = 0; nextOnGround = true;
                             } else if (p.vel.y < 0 && p.pos.y - p.vel.y >= e.pos.y + e.height - 10) {
                                 p.pos.y = e.pos.y + e.height; p.vel.y = 0;
                                 if ((e as Block).blockType === 'question') {
                                     (e as Block).blockType = 'brick';
                                     const rand = Math.random();
-                                    if (rand < 0.25) actionsRef.current.activatePowerup('bigBullet', 30000);
-                                    else if (rand < 0.5) actionsRef.current.activatePowerup('fastRun', 30000);
-                                    else if (rand < 0.75) actionsRef.current.setHP(statsRef.current.hp + 1);
-                                    actionsRef.current.addScore(100);
+                                    if (rand < 0.25) state.activatePowerup('bigBullet', 30000);
+                                    else if (rand < 0.5) state.activatePowerup('fastRun', 30000);
+                                    else if (rand < 0.75) state.setHP(state.hp + 1);
+                                    state.addScore(100);
                                 }
                             }
                         }
                     }
                 });
+                state.setOnGround(nextOnGround);
 
                 // Horizontal Move
                 p.pos.x += p.vel.x;
-                entities.current.forEach(e => {
+                entities.forEach(e => {
                     if (e.type === 'block' && p.pos.x < e.pos.x + e.width && p.pos.x + p.width > e.pos.x &&
                         p.pos.y < e.pos.y + e.height && p.pos.y + p.height > e.pos.y) {
                         if (p.vel.x > 0) p.pos.x = e.pos.x - p.width;
@@ -543,31 +502,31 @@ export const GameCanvas: React.FC = () => {
                 // Fall Death
                 if (p.pos.y > 600) {
                     takeDamage(1);
-                    const groundBlocks = entities.current.filter(e => e.type === 'block' && (e as Block).blockType === 'ground');
-                    const nextSafe = groundBlocks.find(e => e.pos.x > cameraX.current + 100) || groundBlocks[0];
-                    p.pos = nextSafe ? { x: nextSafe.pos.x, y: nextSafe.pos.y - 100 } : { x: cameraX.current + 100, y: 300 };
+                    const groundBlocks = entities.filter(e => e.type === 'block' && (e as Block).blockType === 'ground');
+                    const nextSafe = groundBlocks.find(e => e.pos.x > cameraX + 100) || groundBlocks[0];
+                    p.pos = nextSafe ? { x: nextSafe.pos.x, y: nextSafe.pos.y - 100 } : { x: cameraX + 100, y: 300 };
                     p.vel = { x: 0, y: 0 };
                 }
 
-                if (p.pos.x < cameraX.current) p.pos.x = cameraX.current;
-                if (p.pos.x > BOSS_TRIGGER_X && !bossActive.current) {
-                    bossActive.current = true;
-                    entities.current.push({
+                if (p.pos.x < cameraX) p.pos.x = cameraX;
+                if (p.pos.x > BOSS_TRIGGER_X && !bossActive) {
+                    state.setBossActive(true);
+                    state.setEntities(prev => [...prev, {
                         id: 'boss', pos: { x: BOSS_TRIGGER_X + 600, y: 100 },
                         vel: { x: -2, y: 0 }, width: BOSS_SIZE, height: BOSS_SIZE,
-                        type: 'boss', hp: 50 * stageRef.current, maxHP: 50 * stageRef.current,
-                    } as Entity);
+                        type: 'boss', hp: 50 * currentStage, maxHP: 50 * currentStage,
+                    } as Entity]);
                 }
 
                 // Monster & Boss Logic
-                entities.current.forEach(e => {
+                entities.forEach(e => {
                     if (e.type === 'monster') {
                         e.pos.x += e.vel.x;
                         if (p.pos.x < e.pos.x + e.width && p.pos.x + p.width > e.pos.x &&
                             p.pos.y < e.pos.y + e.height && p.pos.y + p.height > e.pos.y) {
                             if (p.vel.y > 0 && p.pos.y + p.height - p.vel.y <= e.pos.y + 10) {
-                                entities.current = entities.current.filter(ent => ent.id !== e.id);
-                                p.vel.y = -10; actionsRef.current.addScore(200);
+                                state.setEntities(prev => prev.filter(ent => ent.id !== e.id));
+                                p.vel.y = -10; state.addScore(200);
                             } else {
                                 if (takeDamage(1)) p.pos.x -= 100;
                             }
@@ -577,24 +536,25 @@ export const GameCanvas: React.FC = () => {
                         if (e.pos.y + e.height > 500) { e.pos.y = 500 - e.height; e.vel.y = 0; if (Math.random() < 0.02) e.vel.y = -12; }
                         const dist = e.pos.x - p.pos.x;
                         if (dist > 300) e.pos.x -= 2; else if (dist < 100) e.pos.x += 2;
-                        const cooldown = 3500 / stageRef.current;
-                        if (time - bossTactics.current.lastAttackTime > cooldown) {
-                            bossTactics.current.state = 'fire'; bossTactics.current.lastAttackTime = time; bossTactics.current.attackDuration = 1000;
+                        const cooldown = 3500 / currentStage;
+                        if (time - bossTactics.lastAttackTime > cooldown) {
+                            state.updateBossTactics({ state: 'fire', lastAttackTime: time, attackDuration: 1000 });
                             for (let i = 0; i < 3; i++) {
                                 setTimeout(() => {
-                                    if (!gameActive.current) return;
-                                    bullets.current.push({
+                                    const currentState = useGameStore.getState();
+                                    if (currentState.screen !== 'game') return;
+                                    currentState.setBullets(prev => [...prev, {
                                         id: `boss-fire-${Date.now()}-${i}`,
                                         pos: { x: e.pos.x, y: e.pos.y + e.height * 0.4 + i * 20 },
                                         vel: { x: -6 - Math.random() * 2, y: (Math.random() - 0.5) * 2 },
                                         width: 30, height: 30, type: 'boss-bullet'
-                                    });
+                                    }]);
                                 }, i * 300);
                             }
                         }
-                        if (bossTactics.current.attackDuration > 0) {
-                            bossTactics.current.attackDuration -= 16;
-                            if (bossTactics.current.attackDuration <= 0) bossTactics.current.state = 'idle';
+                        if (bossTactics.attackDuration > 0) {
+                            state.updateBossTactics({ attackDuration: bossTactics.attackDuration - 16 });
+                            if (bossTactics.attackDuration - 16 <= 0) state.updateBossTactics({ state: 'idle' });
                         }
                         if (p.pos.x < e.pos.x + e.width && p.pos.x + p.width > e.pos.x &&
                             p.pos.y < e.pos.y + e.height && p.pos.y + p.height > e.pos.y) {
@@ -604,51 +564,55 @@ export const GameCanvas: React.FC = () => {
                 });
 
                 // Bullets Logic
-                bullets.current.forEach(b => {
+                bullets.forEach(b => {
                     b.pos.x += b.vel.x; b.pos.y += b.vel.y;
                     if (b.type === 'bullet') {
-                        const boss = entities.current.find(ent => ent.type === 'boss');
+                        const boss = entities.find(ent => ent.type === 'boss');
                         if (boss && b.pos.x < boss.pos.x + boss.width && b.pos.x + b.width > boss.pos.x &&
                             b.pos.y < boss.pos.y + boss.height && b.pos.y + b.height > boss.pos.y) {
-                            boss.hp = (boss.hp || 0) - (b.damage || 1); bullets.current = bullets.current.filter(bul => bul.id !== b.id);
+                            boss.hp = (boss.hp || 0) - (b.damage || 1);
+                            state.setBullets(prev => prev.filter(bul => bul.id !== b.id));
                             if (boss.hp <= 0) {
-                                entities.current = entities.current.filter(ent => ent.id !== boss.id);
-                                actionsRef.current.addScore(5000); confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-                                gameActive.current = false; actionsRef.current.setScreen('victory');
+                                state.setEntities(prev => prev.filter(ent => ent.id !== boss.id));
+                                state.addScore(5000); confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                                gameActive.current = false; state.setScreen('victory');
                             }
                         }
-                        entities.current.forEach(ent => {
+                        entities.forEach(ent => {
                             if (ent.type === 'monster' && b.pos.x < ent.pos.x + ent.width && b.pos.x + b.width > ent.pos.x &&
                                 b.pos.y < ent.pos.y + ent.height && b.pos.y + b.height > ent.pos.y) {
-                                entities.current = entities.current.filter(e => e.id !== ent.id);
-                                bullets.current = bullets.current.filter(bul => bul.id !== b.id);
-                                actionsRef.current.addScore(200);
+                                state.setEntities(prev => prev.filter(e => e.id !== ent.id));
+                                state.setBullets(prev => prev.filter(bul => bul.id !== b.id));
+                                state.addScore(200);
                             }
                         });
                     } else if (b.type === 'boss-bullet') {
                         if (b.pos.x < p.pos.x + p.width && b.pos.x + b.width > p.pos.x &&
                             b.pos.y < p.pos.y + p.height && b.pos.y + b.height > p.pos.y) {
                             if (takeDamage(1)) {
-                                bullets.current = bullets.current.filter(bul => bul.id !== b.id);
+                                state.setBullets(prev => prev.filter(bul => bul.id !== b.id));
                                 p.pos.x -= 50;
                             }
                         }
                     }
                 });
-                bullets.current = bullets.current.filter(bul => bul.pos.x > cameraX.current - 100 && bul.pos.x < cameraX.current + 1200);
-                cameraX.current = Math.max(cameraX.current, p.pos.x - 400);
+                state.setBullets(prev => prev.filter(bul => bul.pos.x > cameraX - 100 && bul.pos.x < cameraX + 1200));
+                state.setCameraX(Math.max(cameraX, p.pos.x - 400));
+                state.setPlayer(p);
+                state.setEntities(entities);
             }
 
             // -- 2. RENDER --
+            const { cameraX: currentCameraX, entities: currentEntities, bullets: currentBullets, player: currentPlayer, bossTactics: currentBossTactics, hp: currentHP } = useGameStore.getState();
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // Draw Parallax Background
-            drawBackground(ctx, cameraX.current, time);
+            drawBackground(ctx, currentCameraX, time);
 
             ctx.save();
-            ctx.translate(-cameraX.current, 0);
+            ctx.translate(-currentCameraX, 0);
 
-            entities.current.forEach(e => {
+            currentEntities.forEach(e => {
                 if (e.type === 'block') {
                     drawBlock(ctx, e.pos.x, e.pos.y, e.width, e.height, (e as Block).blockType);
                 } else if (e.type === 'monster') {
@@ -684,14 +648,14 @@ export const GameCanvas: React.FC = () => {
                     if (mFace) ctx.drawImage(mFace, 2, 2, e.width - 4, e.height - 4);
                     ctx.restore();
                 } else if (e.type === 'boss') {
-                    drawDragon(ctx, e.pos.x, e.pos.y, e.width, e.height, time, bossTactics.current.state);
+                    drawDragon(ctx, e.pos.x, e.pos.y, e.width, e.height, time, currentBossTactics.state);
                     ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(e.pos.x, e.pos.y - 40, e.width, 10);
                     const hpWidth = Math.max(0, (e.hp! / (e.maxHP || 100)) * e.width);
                     ctx.fillStyle = '#4CAF50'; ctx.fillRect(e.pos.x, e.pos.y - 40, hpWidth, 10);
                 }
             });
 
-            bullets.current.forEach(b => {
+            currentBullets.forEach(b => {
                 ctx.fillStyle = b.type === 'boss-bullet' ? '#FFD700' : 'white';
                 ctx.beginPath(); ctx.arc(b.pos.x + b.width / 2, b.pos.y + b.height / 2, b.width / 2, 0, Math.PI * 2); ctx.fill();
                 if (b.type === 'boss-bullet') {
@@ -700,7 +664,6 @@ export const GameCanvas: React.FC = () => {
                 }
             });
 
-            const p = playerRef.current;
             const isMoving = !isPausedLoop && (keys.current['ArrowLeft'] || keys.current['KeyA'] || keys.current['ArrowRight'] || keys.current['KeyD']);
 
             // SMB3 Outline for player
@@ -709,7 +672,7 @@ export const GameCanvas: React.FC = () => {
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 3;
             ctx.shadowOffsetY = 3;
-            drawPlayer(ctx, p, time, isMoving, faceImage.current);
+            drawPlayer(ctx, currentPlayer, time, isMoving, faceImage.current);
             ctx.restore();
 
             ctx.restore();
@@ -721,13 +684,12 @@ export const GameCanvas: React.FC = () => {
             ctx.lineWidth = 4;
             ctx.strokeRect(10, 530, 980, 60);
 
-            const { hp: curHp, score: curScore, powerups: curPows } = statsRef.current;
             ctx.fillStyle = 'white'; ctx.font = 'bold 20px "Courier New"';
-            ctx.fillText(`WORLD 1-${stageRef.current}`, 30, 565);
-            ctx.fillText(`SCORE: ${String(curScore).padStart(7, '0')}`, 180, 565);
+            ctx.fillText(`WORLD 1-${state.stage}`, 30, 565);
+            ctx.fillText(`SCORE: ${String(state.score).padStart(7, '0')}`, 180, 565);
 
             // Health as Icons
-            const safeHp = Math.max(0, Math.min(10, curHp || 0));
+            const safeHp = Math.max(0, Math.min(10, currentHP || 0));
             ctx.fillText('LIFE:', 450, 565);
             for (let i = 0; i < safeHp; i++) {
                 ctx.fillStyle = '#FF5252';
@@ -736,12 +698,12 @@ export const GameCanvas: React.FC = () => {
                 ctx.fill();
             }
 
-            if (curPows.bigBullet > Date.now()) {
-                const sec = Math.ceil((curPows.bigBullet - Date.now()) / 1000);
+            if (state.powerups.bigBullet > Date.now()) {
+                const sec = Math.ceil((state.powerups.bigBullet - Date.now()) / 1000);
                 ctx.fillStyle = '#FFD600'; ctx.fillText(`P-WINGS: ${sec}s`, 750, 555);
             }
-            if (curPows.fastRun > Date.now()) {
-                const sec = Math.ceil((curPows.fastRun - Date.now()) / 1000);
+            if (state.powerups.fastRun > Date.now()) {
+                const sec = Math.ceil((state.powerups.fastRun - Date.now()) / 1000);
                 ctx.fillStyle = '#00E676'; ctx.fillText(`FAST: ${sec}s`, 750, 580);
             }
 
@@ -751,15 +713,15 @@ export const GameCanvas: React.FC = () => {
             ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT); ctx.clip();
             const mScaleX = MINIMAP_WIDTH / STAGE_LENGTH;
             const mScaleY = MINIMAP_HEIGHT / 600;
-            ctx.scale(mScaleX, mScaleY); ctx.translate(-cameraX.current, 0);
-            ctx.fillStyle = '#5D4037'; ctx.fillRect(cameraX.current, 500, STAGE_LENGTH + 1000, 100);
-            const bEnt = entities.current.find(ev => ev.type === 'boss');
+            ctx.scale(mScaleX, mScaleY); ctx.translate(-currentCameraX, 0);
+            ctx.fillStyle = '#5D4037'; ctx.fillRect(currentCameraX, 500, STAGE_LENGTH + 1000, 100);
+            const bEnt = currentEntities.find(ev => ev.type === 'boss');
             if (bEnt) { ctx.fillStyle = '#FF1744'; ctx.fillRect(bEnt.pos.x, bEnt.pos.y, bEnt.width, bEnt.height); }
-            ctx.fillStyle = '#FFFFFF'; ctx.fillRect(p.pos.x, p.pos.y, p.width, p.height);
+            ctx.fillStyle = '#FFFFFF'; ctx.fillRect(currentPlayer.pos.x, currentPlayer.pos.y, currentPlayer.width, currentPlayer.height);
             ctx.restore();
 
-            if (statsRef.current.hp <= 0) {
-                gameActive.current = false; actionsRef.current.setScreen('gameover');
+            if (currentHP <= 0) {
+                gameActive.current = false; state.setScreen('gameover');
             }
         } catch (err) {
             console.error("Game Loop Error:", err);
