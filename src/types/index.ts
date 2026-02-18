@@ -18,6 +18,10 @@ export interface Entity {
 export interface Block extends Entity {
     blockType: 'brick' | 'question' | 'ground';
     hasItem?: boolean;
+    /** Timestamp (ms) when player first stepped on this platform block. undefined = no one standing. */
+    standingStartTime?: number;
+    /** True while the block is in the 1s warning phase before disappearing */
+    isCrumbling?: boolean;
 }
 
 export interface Monster extends Entity {

@@ -168,6 +168,45 @@ export const GameCanvas: React.FC = () => {
 
                 applyHorizontalPhysics(p, gs.entities);
 
+                // --- Platform crumble logic ---
+                // 2F+ platforms: blockType !== 'ground' (y < 500)
+                const GROUND_Y = 500;
+                const CRUMBLE_WARN_MS = 2000;  // start flashing at 2s
+                const CRUMBLE_FALL_MS = 3000;  // disappear at 3s
+                const now = Date.now();
+                const standingBlock = vertResult.standingOnBlock;
+
+                gs.entities = gs.entities.filter(e => {
+                    if (e.type !== 'block') return true;
+                    const blk = e as Block;
+
+                    // Only apply to non-ground platform blocks
+                    if (blk.blockType === 'ground' || blk.pos.y >= GROUND_Y) return true;
+
+                    const isStandingHere = standingBlock?.id === blk.id;
+
+                    if (isStandingHere) {
+                        // Start timer on first contact
+                        if (blk.standingStartTime === undefined) {
+                            blk.standingStartTime = now;
+                        }
+                        const elapsed = now - blk.standingStartTime;
+                        blk.isCrumbling = elapsed >= CRUMBLE_WARN_MS;
+
+                        // Remove block after 3s → player falls naturally
+                        if (elapsed >= CRUMBLE_FALL_MS) {
+                            return false; // remove from entities
+                        }
+                    } else {
+                        // Player left this block → reset timer
+                        blk.standingStartTime = undefined;
+                        blk.isCrumbling = false;
+                    }
+
+                    return true;
+                });
+
+
                 // Fall Death
                 if (p.pos.y > 600) {
                     actions.takeDamage(1);
@@ -232,7 +271,7 @@ export const GameCanvas: React.FC = () => {
             // Entities
             gs.entities.forEach(e => {
                 if (e.type === 'block') {
-                    drawBlock(ctx, e.pos.x, e.pos.y, e.width, e.height, (e as Block).blockType);
+                    drawBlock(ctx, e.pos.x, e.pos.y, e.width, e.height, (e as Block).blockType, (e as Block).isCrumbling);
                 } else if (e.type === 'monster') {
                     const m = e as Monster;
                     const mFace = monsterFaces.current[m.monsterType === 'skinny' ? 0 : m.monsterType === 'fat' ? 1 : 2];

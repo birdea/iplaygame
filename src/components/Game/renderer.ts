@@ -48,9 +48,18 @@ export function drawBackground(ctx: CanvasRenderingContext2D, cameraX: number, t
 }
 
 /** Draw an SMB3-style block (ground, brick, or question) */
-export function drawBlock(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, type: 'ground' | 'brick' | 'question'): void {
+export function drawBlock(
+    ctx: CanvasRenderingContext2D,
+    x: number, y: number, w: number, h: number,
+    type: 'ground' | 'brick' | 'question',
+    isCrumbling = false,
+): void {
     ctx.save();
-    ctx.translate(x, y);
+
+    // Crumble shake: jitter position slightly
+    const shakeX = isCrumbling ? (Math.random() - 0.5) * 4 : 0;
+    const shakeY = isCrumbling ? (Math.random() - 0.5) * 4 : 0;
+    ctx.translate(x + shakeX, y + shakeY);
 
     if (type === 'ground') {
         ctx.fillStyle = COLORS.GROUND;
@@ -90,8 +99,23 @@ export function drawBlock(ctx: CanvasRenderingContext2D, x: number, y: number, w
         ctx.fillRect(4, h - 7, 3, 3); ctx.fillRect(w - 7, h - 7, 3, 3);
     }
 
+    // Crumble warning overlay: red flash at ~8Hz
+    if (isCrumbling && Math.floor(Date.now() / 60) % 2 === 0) {
+        ctx.fillStyle = 'rgba(255, 50, 0, 0.45)';
+        ctx.fillRect(0, 0, w, h);
+        // Crack lines
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(w * 0.2, 0); ctx.lineTo(w * 0.4, h * 0.6); ctx.lineTo(w * 0.3, h);
+        ctx.moveTo(w * 0.7, 0); ctx.lineTo(w * 0.55, h * 0.4); ctx.lineTo(w * 0.75, h);
+        ctx.stroke();
+    }
+
     ctx.restore();
 }
+
+
 
 /** Draw the dragon boss (flipped to face left) */
 export function drawDragon(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, time: number, state: string): void {

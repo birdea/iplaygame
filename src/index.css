@@ -177,7 +177,7 @@ body {
 #root {
   height: 100%;
   width: 100%;
-  background-image: url('/main_logo.webp');
+  background-image: url('/main_logo.jpg');
   background-size: cover;
   background-position: center;
 }

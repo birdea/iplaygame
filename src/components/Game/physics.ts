@@ -14,6 +14,8 @@ export function aabbOverlap(a: Entity, b: Entity): boolean {
 export interface VerticalCollisionResult {
     onGround: boolean;
     hitQuestion: Block | null;
+    /** The block the player is currently standing on (null if airborne) */
+    standingOnBlock: Block | null;
 }
 
 /**
@@ -29,6 +31,7 @@ export function applyVerticalPhysics(
 
     let onGround = false;
     let hitQuestion: Block | null = null;
+    let standingOnBlock: Block | null = null;
 
     for (const e of blocks) {
         if (e.type !== 'block') continue;
@@ -39,6 +42,7 @@ export function applyVerticalPhysics(
             player.pos.y = e.pos.y - player.height;
             player.vel.y = 0;
             onGround = true;
+            standingOnBlock = e as Block;
         } else if (player.vel.y < 0 && player.pos.y - player.vel.y >= e.pos.y + e.height - 10) {
             // Hitting head on bottom
             player.pos.y = e.pos.y + e.height;
@@ -49,8 +53,9 @@ export function applyVerticalPhysics(
         }
     }
 
-    return { onGround, hitQuestion };
+    return { onGround, hitQuestion, standingOnBlock };
 }
+
 
 /**
  * Apply horizontal movement and resolve horizontal collisions with blocks.
