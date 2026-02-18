@@ -15,6 +15,14 @@ export const Menu: React.FC = () => {
             >
                 KIDS <span className="text-primary">ADVENTURE</span>
             </motion.h1>
+            <motion.div
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.2, type: 'spring', stiffness: 260, damping: 20 }}
+                className="w-64 h-64 rounded-3xl overflow-hidden shadow-2xl border-4 border-white/20"
+            >
+                <img src="/main_logo.png" alt="Main Logo" className="w-full h-full object-cover" />
+            </motion.div>
 
             <div className="flex flex-col gap-4 w-64">
                 <motion.button

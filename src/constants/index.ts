@@ -1,6 +1,6 @@
 export const UNIT_SIZE = 50; // 1m = 50px
-export const STAGE_LENGTH = 500 * UNIT_SIZE; // 25000px
-export const BOSS_TRIGGER_X = 480 * UNIT_SIZE; // 24000px
+export const STAGE_LENGTH = 100 * UNIT_SIZE; // 5000px
+export const BOSS_TRIGGER_X = 80 * UNIT_SIZE; // 4000px
 export const BOSS_SIZE = 20 * UNIT_SIZE; // 1000px
 
 export const GRAVITY = 0.5;
