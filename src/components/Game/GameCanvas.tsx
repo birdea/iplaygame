@@ -71,8 +71,16 @@ export const GameCanvas: React.FC = () => {
     useEffect(() => {
         const newEntities: Entity[] = [];
 
-        // Floor
-        for (let x = 0; x < STAGE_LENGTH; x += UNIT_SIZE) {
+        // Floor with Holes
+        let x = 0;
+        while (x < STAGE_LENGTH) {
+            // Create a hole occasionally (after starting area)
+            if (x > 1000 && x < BOSS_TRIGGER_X - 500 && Math.random() < 0.12) {
+                const holeSize = Math.floor(Math.random() * 2) + 1; // 1 or 2 blocks wide
+                x += holeSize * UNIT_SIZE;
+                continue;
+            }
+
             newEntities.push({
                 id: `ground-${x}`,
                 pos: { x, y: 500 },
@@ -82,18 +90,20 @@ export const GameCanvas: React.FC = () => {
                 type: 'block',
                 blockType: 'ground'
             } as Block);
+            x += UNIT_SIZE;
         }
 
-        // Random Bricks and Monsters
         // Difficulty scaling
         const monsterChance = 0.15 + (stageRef.current - 1) * 0.1;
         const monsterSpeed = 2 + (stageRef.current - 1) * 1.5;
 
-        for (let x = 500; x < BOSS_TRIGGER_X - 500; x += UNIT_SIZE * 2) {
+        // Monsters and Bricks (Ensure they don't float over holes if we want realism, 
+        // but for now random is fine)
+        for (let bx = 500; bx < BOSS_TRIGGER_X - 500; bx += UNIT_SIZE * 2) {
             if (Math.random() > 0.7) {
                 newEntities.push({
-                    id: `brick-${x}`,
-                    pos: { x, y: 300 },
+                    id: `brick-${bx}`,
+                    pos: { x: bx, y: 300 },
                     vel: { x: 0, y: 0 },
                     width: UNIT_SIZE,
                     height: UNIT_SIZE,
@@ -104,8 +114,8 @@ export const GameCanvas: React.FC = () => {
 
             if (Math.random() < monsterChance) {
                 newEntities.push({
-                    id: `monster-${x}`,
-                    pos: { x, y: 450 },
+                    id: `monster-${bx}`,
+                    pos: { x: bx, y: 450 },
                     vel: { x: -monsterSpeed, y: 0 },
                     width: UNIT_SIZE,
                     height: UNIT_SIZE,
@@ -124,10 +134,13 @@ export const GameCanvas: React.FC = () => {
         gameActive.current = true;
     }, [stage]);
 
-    // Helper: Draw Dragon
+    // Helper: Draw Dragon (Flipped to face Left)
     const drawDragon = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, time: number, state: string) => {
         ctx.save();
         ctx.translate(x + width / 2, y + height / 2);
+
+        // FLIP: Face Left
+        ctx.scale(-1, 1);
 
         // Dragon is now larger, adjusted scale
         const scale = Math.min(width, height) / 300;
@@ -196,12 +209,12 @@ export const GameCanvas: React.FC = () => {
         if (state === 'fire') {
             ctx.save();
             ctx.translate(100, 0);
-            ctx.fillStyle = 'orange';
+            ctx.fillStyle = '#FFEB3B'; // Bright flame
             for (let i = 0; i < 5; i++) {
-                const fx = Math.random() * 50;
-                const fy = (Math.random() - 0.5) * 40;
+                const fx = Math.random() * 60;
+                const fy = (Math.random() - 0.5) * 50;
                 ctx.beginPath();
-                ctx.arc(fx, fy, 10 + Math.random() * 10, 0, Math.PI * 2);
+                ctx.arc(fx, fy, 15 + Math.random() * 10, 0, Math.PI * 2);
                 ctx.fill();
             }
             ctx.restore();
@@ -311,7 +324,7 @@ export const GameCanvas: React.FC = () => {
             bossActive.current = true;
             entities.current.push({
                 id: 'boss',
-                pos: { x: BOSS_TRIGGER_X + 400, y: 100 },
+                pos: { x: BOSS_TRIGGER_X + 600, y: 100 },
                 vel: { x: -2, y: 0 },
                 width: BOSS_SIZE,
                 height: BOSS_SIZE,
@@ -332,20 +345,21 @@ export const GameCanvas: React.FC = () => {
 
             // -- 1. INPUT --
             let isMoving = false;
+            const p = playerRef.current;
             // Left/Right
             if (keys.current['ArrowLeft'] || keys.current['KeyA']) {
-                playerRef.current.vel.x = -MOVE_SPEED * speedMult;
+                p.vel.x = -MOVE_SPEED * speedMult;
                 isMoving = true;
             } else if (keys.current['ArrowRight'] || keys.current['KeyD']) {
-                playerRef.current.vel.x = MOVE_SPEED * speedMult;
+                p.vel.x = MOVE_SPEED * speedMult;
                 isMoving = true;
             } else {
-                playerRef.current.vel.x = 0;
+                p.vel.x = 0;
             }
 
             // Jump: Up, W, or Space (Virtual A)
             if ((keys.current['ArrowUp'] || keys.current['KeyW'] || keys.current['Space']) && onGround.current) {
-                playerRef.current.vel.y = JUMP_FORCE;
+                p.vel.y = JUMP_FORCE;
                 onGround.current = false;
             }
 
@@ -356,10 +370,19 @@ export const GameCanvas: React.FC = () => {
             }
 
             // -- 2. PHYSICS & COLLISION --
-            const p = playerRef.current;
             p.vel.y += GRAVITY;
             p.pos.x += p.vel.x;
             p.pos.y += p.vel.y;
+
+            // Fall Detection
+            if (p.pos.y > 600) {
+                actionsRef.current.setHP(hp - 1);
+                // Respawn back a little on safe height
+                p.pos.y = 200;
+                p.pos.x = Math.max(cameraX.current + 50, p.pos.x - 150);
+                p.vel.y = 0;
+                p.vel.x = 0;
+            }
 
             // SCREEN BOUNDARY: CANNOT GO LEFT OF CAMERA
             if (p.pos.x < cameraX.current) {
@@ -435,10 +458,10 @@ export const GameCanvas: React.FC = () => {
                     const distToPlayer = e.pos.x - p.pos.x;
                     // Keep some space but approach
                     if (distToPlayer > 300) e.pos.x -= 2;
-                    else if (distToPlayer < 150) e.pos.x += 2;
+                    else if (distToPlayer < 100) e.pos.x += 2;
 
                     // Attack: Multi-fire
-                    const cooldown = 4000 / stageRef.current;
+                    const cooldown = 3500 / stageRef.current;
                     if (time - bossTactics.current.lastAttackTime > cooldown) {
                         bossTactics.current.state = 'fire';
                         bossTactics.current.lastAttackTime = time;
@@ -450,13 +473,13 @@ export const GameCanvas: React.FC = () => {
                                 if (!gameActive.current) return;
                                 bullets.current.push({
                                     id: `boss-fire-${Date.now()}-${i}`,
-                                    pos: { x: e.pos.x, y: e.pos.y + e.height * 0.3 + i * 30 },
-                                    vel: { x: -6 - Math.random() * 2, y: (Math.random() - 0.5) * 3 },
-                                    width: 25,
-                                    height: 25,
+                                    pos: { x: e.pos.x, y: e.pos.y + e.height * 0.4 + i * 20 },
+                                    vel: { x: -6 - Math.random() * 2, y: (Math.random() - 0.5) * 2 },
+                                    width: 30,
+                                    height: 30,
                                     type: 'boss-bullet'
                                 });
-                            }, i * 250);
+                            }, i * 300);
                         }
                     }
 
@@ -510,7 +533,7 @@ export const GameCanvas: React.FC = () => {
                     if (b.pos.x < p.pos.x + p.width &&
                         b.pos.x + b.width > p.pos.x &&
                         b.pos.y < p.pos.y + p.height &&
-                        b.pos.y + b.height > p.pos.y) {
+                        b.pos.y + b.height > p.pos.y) { // Corrected collision check
                         actionsRef.current.setHP(hp - 1);
                         bullets.current = bullets.current.filter(bul => bul.id !== b.id);
                         p.pos.x -= 50;
@@ -553,10 +576,17 @@ export const GameCanvas: React.FC = () => {
             });
 
             bullets.current.forEach(b => {
-                ctx.fillStyle = b.type === 'boss-bullet' ? '#FF5722' : 'white';
+                ctx.fillStyle = b.type === 'boss-bullet' ? '#FFD700' : 'white';
                 ctx.beginPath();
                 ctx.arc(b.pos.x + b.width / 2, b.pos.y + b.height / 2, b.width / 2, 0, Math.PI * 2);
                 ctx.fill();
+                // Flame trail for boss fire
+                if (b.type === 'boss-bullet') {
+                    ctx.fillStyle = 'rgba(255, 69, 0, 0.4)';
+                    ctx.beginPath();
+                    ctx.arc(b.pos.x + b.width + 5, b.pos.y + b.height / 2, b.width / 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
             });
 
             drawPlayer(ctx, p, time, isMoving, faceImage.current);
@@ -591,9 +621,9 @@ export const GameCanvas: React.FC = () => {
             ctx.clip();
 
             // Show approx 3000px range in the 150px minimap
-            const minimapScaleX = MINIMAP_WIDTH / 3000;
-            const minimapScaleY = MINIMAP_HEIGHT / 600;
-            ctx.scale(minimapScaleX, minimapScaleY);
+            const mScaleX = MINIMAP_WIDTH / 3000;
+            const mScaleY = MINIMAP_HEIGHT / 600;
+            ctx.scale(mScaleX, mScaleY);
             ctx.translate(-cameraX.current, 0);
 
             // Draw floor in minimap
@@ -601,7 +631,7 @@ export const GameCanvas: React.FC = () => {
             ctx.fillRect(cameraX.current, 500, 4000, 100);
 
             // Draw BOSS in minimap
-            const boss = entities.current.find(e => e.type === 'boss');
+            const boss = entities.current.find(ev => ev.type === 'boss');
             ctx.fillStyle = '#FF1744';
             if (boss) {
                 // Actual boss position
@@ -609,7 +639,7 @@ export const GameCanvas: React.FC = () => {
             } else {
                 // Preview marker where boss will appear
                 ctx.globalAlpha = 0.5;
-                ctx.fillRect(BOSS_TRIGGER_X + 400, 100, BOSS_SIZE, BOSS_SIZE);
+                ctx.fillRect(BOSS_TRIGGER_X + 600, 100, BOSS_SIZE, BOSS_SIZE);
                 ctx.globalAlpha = 1.0;
             }
 
