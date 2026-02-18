@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useGameStore } from './store/useGameStore';
 import { Menu } from './components/UI/Menu';
 import { Settings } from './components/UI/Settings';
@@ -7,6 +7,25 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const App: React.FC = () => {
   const { screen, setScreen, resetGame, nextStage, stage } = useGameStore();
+
+  useEffect(() => {
+    const audio = new Audio('/bgm.m4a');
+    audio.loop = true;
+    audio.volume = 0.5;
+
+    const playAudio = () => {
+      audio.play().catch(err => console.log("Autoplay blocked, waiting for interaction", err));
+      window.removeEventListener('click', playAudio);
+    };
+
+    window.addEventListener('click', playAudio);
+    playAudio();
+
+    return () => {
+      audio.pause();
+      window.removeEventListener('click', playAudio);
+    };
+  }, []);
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-dark">
