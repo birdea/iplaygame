@@ -177,7 +177,7 @@ body {
 #root {
   height: 100%;
   width: 100%;
-  background-image: url('/main_logo.jpg');
+  background-image: url('/logo/main_logo.jpg');
   background-size: cover;
   background-position: center;
 }
@@ -397,64 +397,6 @@ canvas {
   gap: 1rem;
 }
 
-.hud-card {
-  background: rgba(15, 23, 42, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 0.75rem 1.25rem;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
-}
-
-.hud-item {
-  display: flex;
-  flex-direction: column;
-}
-
-.hud-label {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.5);
-  font-weight: 700;
-}
-
-.hud-value {
-  font-size: 1.25rem;
-  font-weight: 900;
-  color: white;
-  line-height: 1.2;
-}
-
-.health-bar-container {
-  display: flex;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.health-segment {
-  width: 24px;
-  height: 6px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.1);
-  transition: all 0.3s ease;
-}
-
-.health-segment.active {
-  background: var(--primary);
-  box-shadow: 0 0 10px var(--primary);
-}
-
-.hud-divider {
-  width: 1px;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.1);
-}
-
 .pause-btn {
   width: 44px;
   height: 44px;
@@ -473,4 +415,101 @@ canvas {
 .pause-btn:hover {
   background: rgba(255, 255, 255, 0.2);
   transform: translateY(-2px);
+}
+
+/* NEW Bottom HUD Bar */
+.hud-bottom-bar {
+  flex: 1;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 18px;
+  padding: 0.6rem 1.25rem;
+  margin: 0 1rem 0.5rem 1rem;
+  pointer-events: auto;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  max-width: 650px;
+  min-height: 70px;
+}
+
+.hud-left-info,
+.hud-right-info {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.hud-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.hud-label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.hud-value {
+  font-size: 1.1rem;
+  font-weight: 900;
+  color: #fff;
+}
+
+.hud-center-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.health-container {
+  display: flex;
+  gap: 6px;
+}
+
+.health-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.health-dot.active {
+  background: #FF4E50;
+  box-shadow: 0 0 12px rgba(255, 78, 80, 0.6);
+}
+
+.powerup-timers {
+  display: flex;
+  gap: 10px;
+}
+
+.timer-badge {
+  font-size: 0.65rem;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-weight: 800;
+}
+
+.timer-badge.big-bullet {
+  background: linear-gradient(135deg, #FF6F00, #FFB300);
+  color: white;
+}
+
+.timer-badge.fast-run {
+  background: linear-gradient(135deg, #00C853, #64DD17);
+  color: white;
+}
+
+.text-yellow-400 {
+  color: #facc15 !important;
+}
+
+.text-blue-400 {
+  color: #60a5fa !important;
 }

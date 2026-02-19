@@ -14,6 +14,8 @@ export interface Entity {
     maxHP?: number;
     damage?: number;
     lastHitBySwing?: number;
+    facing?: 'left' | 'right';
+    attackDir?: 'left' | 'right' | 'up' | 'down';
 }
 
 export interface Block extends Entity {
@@ -23,6 +25,8 @@ export interface Block extends Entity {
     standingStartTime?: number;
     /** True while the block is in the 1s warning phase before disappearing */
     isCrumbling?: boolean;
+    /** Number of times the block has been hit by head or flail */
+    hitCount?: number;
 }
 
 export interface Monster extends Entity {

@@ -54,6 +54,7 @@ export function drawBlock(
     x: number, y: number, w: number, h: number,
     type: 'ground' | 'brick' | 'question',
     isCrumbling = false,
+    hitCount = 0,
 ): void {
     ctx.save();
 
@@ -104,23 +105,53 @@ export function drawBlock(
     if (isCrumbling && Math.floor(Date.now() / 60) % 2 === 0) {
         ctx.fillStyle = 'rgba(255, 50, 0, 0.45)';
         ctx.fillRect(0, 0, w, h);
-        // Crack lines
-        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-        ctx.lineWidth = 1.5;
+    }
+
+    // Progressive damage cracks
+    if (hitCount > 0 && type !== 'ground') {
+        const maxHits = GAME_STRATEGY.STAGE.PLATFORMS.BLOCK_MAX_HITS || 4;
+        const intensity = hitCount / maxHits;
+
+        ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+        ctx.lineWidth = 1 + intensity * 2;
         ctx.beginPath();
-        ctx.moveTo(w * 0.2, 0); ctx.lineTo(w * 0.4, h * 0.6); ctx.lineTo(w * 0.3, h);
-        ctx.moveTo(w * 0.7, 0); ctx.lineTo(w * 0.55, h * 0.4); ctx.lineTo(w * 0.75, h);
+
+        // Stage 1: One main crack
+        if (hitCount >= 1) {
+            ctx.moveTo(w * 0.2, 0); ctx.lineTo(w * 0.5, h * 0.4); ctx.lineTo(w * 0.3, h);
+        }
+        // Stage 2: Second crack
+        if (hitCount >= 2) {
+            ctx.moveTo(w * 0.8, 0); ctx.lineTo(w * 0.6, h * 0.5); ctx.lineTo(w * 0.7, h);
+        }
+        // Stage 3: Cross crack
+        if (hitCount >= 3) {
+            ctx.moveTo(0, h * 0.3); ctx.lineTo(w, h * 0.7);
+        }
+        // Stage 4+: More messy cracks
+        if (hitCount >= 4) {
+            ctx.moveTo(0, h * 0.8); ctx.lineTo(w * 0.4, h * 0.5); ctx.lineTo(w, h * 0.2);
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.fillRect(0, 0, w, h);
+        }
         ctx.stroke();
     }
 
     ctx.restore();
 }
 
-/** Draw the dragon boss (flipped to face left) */
-export function drawDragon(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, time: number, state: string, stage: number = 1): void {
+export function drawDragon(
+    ctx: CanvasRenderingContext2D,
+    x: number, y: number,
+    width: number, height: number,
+    time: number, state: string,
+    stage: number = 1,
+    facingVal: number = -1,
+    playerPos?: { x: number, y: number }
+): void {
     ctx.save();
     ctx.translate(x + width / 2, y + height / 2);
-    ctx.scale(-1, 1); // Face left
+    ctx.scale(facingVal, 1);
 
     const scale = Math.min(width, height) / 300;
     ctx.scale(scale, scale);
@@ -128,6 +159,85 @@ export function drawDragon(ctx: CanvasRenderingContext2D, x: number, y: number, 
     const bodyColor = state === 'punch' ? '#FF1744' : '#1A237E';
     const strokeColor = '#FFFFFF';
     ctx.lineWidth = 5;
+
+    const { BOSS } = GAME_STRATEGY;
+    const armCount = BOSS.LIMBS.ARMS_BASE + (stage - 1) * BOSS.LIMBS.ARMS_PER_STAGE;
+    const legCount = BOSS.LIMBS.LEGS_BASE + (stage - 1) * BOSS.LIMBS.LEGS_PER_STAGE;
+    const segmentCount = BOSS.LIMBS.SEGMENT_COUNT;
+    const segmentLen = BOSS.LIMBS.SEGMENT_LENGTH;
+
+    // Helper to draw a multi-jointed limb pointing towards a target
+    const drawLimb = (startX: number, startY: number, tX: number, tY: number, isLeg: boolean, index: number) => {
+        ctx.save();
+        ctx.translate(startX, startY);
+
+        let curX = 0;
+        let curY = 0;
+
+        // Target angle relative to limb start
+        const dx = tX - (x + width / 2 + startX * scale * facingVal);
+        const dy = tY - (y + height / 2 + startY * scale);
+        const baseAngle = Math.atan2(dy, dx * facingVal);
+
+        for (let s = 0; s < segmentCount; s++) {
+            const phase = time / 500 + index * 0.5 + s * 0.3;
+            const wave = Math.sin(phase) * (isLeg ? 0.2 : 0.4);
+            const angle = baseAngle + wave;
+
+            ctx.save();
+            ctx.translate(curX, curY);
+            ctx.rotate(angle);
+
+            // Segment
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(segmentLen, 0);
+            ctx.strokeStyle = strokeColor;
+            ctx.stroke();
+
+            // Joint / Muscle
+            ctx.beginPath();
+            ctx.arc(0, 0, 8 - s * 2, 0, Math.PI * 2);
+            ctx.fillStyle = bodyColor;
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.restore();
+
+            curX += Math.cos(angle) * segmentLen;
+            curY += Math.sin(angle) * segmentLen;
+        }
+
+        // Paw / Claw at the end
+        ctx.save();
+        ctx.translate(curX, curY);
+        ctx.beginPath();
+        ctx.arc(0, 0, 10, 0, Math.PI * 2);
+        ctx.fillStyle = bodyColor;
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.restore();
+    };
+
+    const tX = playerPos?.x ?? 0;
+    const tY = playerPos?.y ?? 0;
+
+    // Draw Arms
+    for (let i = 0; i < armCount; i++) {
+        const angle = (i / armCount) * Math.PI - Math.PI / 2;
+        const ax = Math.cos(angle) * 30;
+        const ay = Math.sin(angle) * 60;
+        drawLimb(ax, ay, tX, tY, false, i);
+    }
+
+    // Draw Legs
+    for (let i = 0; i < legCount; i++) {
+        const lx = -100 + i * (40 / Math.max(1, legCount - 1));
+        const ly = 60;
+        drawLimb(lx, ly, tX, tY, true, i + 10);
+    }
 
     const drawDiamond = (dx: number, dy: number, s: number, angle: number) => {
         ctx.save();
@@ -188,7 +298,6 @@ export function drawDragon(ctx: CanvasRenderingContext2D, x: number, y: number, 
         ctx.save();
         ctx.translate(100, 0);
         ctx.fillStyle = '#FFEB3B';
-        // 2x longer (60 -> 120) and 20% increase per level
         const breathLen = 120 * Math.pow(1.2, stage - 1);
         for (let i = 0; i < 8; i++) {
             const fx = Math.random() * breathLen;
@@ -235,7 +344,11 @@ export function drawPlayer(
     const isMegaSwinging = megaElapsed < 600;
 
     ctx.save();
-    ctx.translate(pos.x, pos.y);
+    ctx.translate(pos.x + 25, pos.y);
+    if (p.facing === 'left') {
+        ctx.scale(-1, 1);
+    }
+    ctx.translate(-25, 0);
 
     // Draw Charging Aura
     if (aCharged) {
@@ -319,7 +432,20 @@ export function drawPlayer(
 
     // Right arm + Flail
     ctx.save();
-    ctx.translate(45, 38);
+
+    const attackDir = p.attackDir || p.facing || 'right';
+    const isFlipped = p.facing === 'left';
+    let baseAngle = 0;
+
+    if (attackDir === 'up') baseAngle = -Math.PI / 2;
+    else if (attackDir === 'down') baseAngle = Math.PI / 2;
+    // Handled by flipped scale usually, but let's be safe
+    else if (attackDir === 'left') baseAngle = isFlipped ? 0 : Math.PI;
+    else if (attackDir === 'right') baseAngle = isFlipped ? Math.PI : 0;
+
+    // Body center-ish shoulder
+    ctx.translate(25, 40);
+    ctx.rotate(baseAngle);
 
     const normalDuration = 500;
     const megaDuration = 600;
@@ -345,7 +471,11 @@ export function drawPlayer(
             // Extend and retract
             const throwProgress = (progress - 0.3) / 0.7;
             const throwPhase = Math.sin(throwProgress * Math.PI); // 0 -> 1 -> 0
-            rightArmAngle = -Math.PI / 6 + throwPhase * (Math.PI / 3);
+
+            // Swing arc: wider for mega
+            const arcSize = isMegaSwinging ? Math.PI : Math.PI / 3;
+            rightArmAngle = -arcSize / 2 + throwPhase * arcSize;
+
             chainExtensionRatio = 0.2 + throwPhase * 0.8;
             flailRotation = throwPhase * 0.1;
         }
@@ -601,11 +731,29 @@ export function drawGroundItems(ctx: CanvasRenderingContext2D, items: GroundItem
 
 /** Draw the boss HP bar */
 export function drawBossHPBar(ctx: CanvasRenderingContext2D, boss: Entity): void {
+    const barWidth = boss.width;
+    const barHeight = 15;
+    const bx = boss.pos.x;
+    const by = boss.pos.y - 40;
+
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(boss.pos.x, boss.pos.y - 40, boss.width, 10);
-    const hpWidth = Math.max(0, (boss.hp! / (boss.maxHP || 100)) * boss.width);
-    ctx.fillStyle = '#4CAF50';
-    ctx.fillRect(boss.pos.x, boss.pos.y - 40, hpWidth, 10);
+    ctx.fillRect(bx, by, barWidth, barHeight);
+
+    const hpRatio = Math.max(0, boss.hp! / (boss.maxHP || 100));
+    const hpWidth = hpRatio * barWidth;
+
+    ctx.fillStyle = hpRatio > 0.6 ? '#4CAF50' : hpRatio > 0.3 ? '#FFA726' : '#EF5350';
+    ctx.fillRect(bx, by, hpWidth, barHeight);
+
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${Math.ceil(boss.hp!)} / ${boss.maxHP}`, bx + barWidth / 2, by + barHeight / 2 + 1);
+
+    // Restore default alignments
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
 }
 
 export interface HUDData {
@@ -706,5 +854,49 @@ export function drawMinimap(
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(player.pos.x, player.pos.y, player.width, player.height);
 
+    ctx.restore();
+}
+
+/** Draw red outer glow when damaged */
+export function drawDamageVignette(ctx: CanvasRenderingContext2D, lastDamageTime: number, now: number): void {
+    const elapsed = now - lastDamageTime;
+    if (elapsed > 1000) return;
+
+    const alpha = Math.max(0, 0.4 * (1 - elapsed / 1000));
+    const gradient = ctx.createRadialGradient(
+        CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_HEIGHT * 0.3,
+        CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, CANVAS_WIDTH * 0.6
+    );
+    gradient.addColorStop(0, 'transparent');
+    gradient.addColorStop(1, `rgba(255, 0, 0, ${alpha})`);
+
+    ctx.save();
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    ctx.restore();
+}
+
+/** Draw large flashing boss warning message */
+export function drawBossWarning(ctx: CanvasRenderingContext2D, now: number): void {
+    const isVisible = Math.floor(now / 200) % 2 === 0;
+    if (!isVisible) return;
+
+    ctx.save();
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = 'red';
+    ctx.fillStyle = '#FF0000';
+    ctx.font = 'bold 50px "Press Start 2P"';
+    // Fallback if font not loaded
+    if (!ctx.measureText('W').width) ctx.font = 'bold 50px sans-serif';
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Slight pulse
+    const scale = 1 + Math.sin(now / 100) * 0.1;
+    ctx.translate(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+    ctx.scale(scale, scale);
+
+    ctx.fillText('!!!!!! BOSS APPEARING !!!!!!', 0, 0);
     ctx.restore();
 }

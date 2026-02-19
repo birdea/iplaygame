@@ -12,27 +12,40 @@ const { UI } = GAME_STRATEGY;
 
 const VictoryView: React.FC = () => {
   const { stage, nextStage, setScreen } = useGameStore();
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    const end = Date.now() + 3000;
+    if (!canvasRef.current) return;
+    const myConfetti = confetti.create(canvasRef.current, {
+      resize: true,
+      useWorker: true
+    });
+
+    const end = Date.now() + 4000;
+    const colors = ['#87CEEB', '#00BFFF', '#FFFFFF']; // Sky blue, Deep sky blue, White
+
     const frame = () => {
-      confetti({
-        particleCount: 2,
+      myConfetti({
+        particleCount: 3,
         angle: 60,
         spread: 55,
-        origin: { x: 0 },
-        colors: ['#bb0000', '#ffffff']
+        origin: { x: 0, y: 0.7 },
+        colors
       });
-      confetti({
-        particleCount: 2,
+      myConfetti({
+        particleCount: 3,
         angle: 120,
         spread: 55,
-        origin: { x: 1 },
-        colors: ['#bb0000', '#ffffff']
+        origin: { x: 1, y: 0.7 },
+        colors
       });
       if (Date.now() < end) requestAnimationFrame(frame);
     };
     frame();
+
+    return () => {
+      myConfetti.reset();
+    };
   }, []);
 
   return (
@@ -40,42 +53,65 @@ const VictoryView: React.FC = () => {
       key="victory"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="w-full h-full flex flex-col items-center justify-center gap-6 md:gap-8 bg-black/80"
+      className="relative w-full h-full flex flex-col items-center justify-center gap-6 md:gap-8 bg-black/80"
     >
-      <h2 className="responsive-header font-black text-accent">{UI.VICTORY_TITLE}</h2>
-      <p className="text-xl md:text-2xl text-white/80">{UI.STAGE_CLEAR_MESSAGE(stage)}</p>
-      {stage < GAME_STRATEGY.STAGE.TOTAL_STAGES ? (
-        <button
-          onClick={() => { nextStage(); setScreen('game'); }}
-          className="btn-primary text-xl md:text-2xl px-8 md:px-12 py-4 md:py-6"
-        >
-          {UI.NEXT_STAGE_BUTTON}
-        </button>
-      ) : (
-        <div className="flex flex-col items-center gap-4">
-          <p className="text-2xl md:text-4xl text-white">{UI.ALL_CLEAR_MESSAGE}</p>
-          <button onClick={() => setScreen('menu')} className="btn-primary">
-            {UI.MAIN_MENU_BUTTON}
-          </button>
-        </div>
-      )}
-    </motion.div>
+      {/* Background Confetti Canvas */}
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        style={{ zIndex: 0 }}
+      />
 
+      <div className="relative z-10 flex flex-col items-center gap-6 md:gap-8">
+        <h2 className="responsive-header font-black text-accent drop-shadow-lg">{UI.VICTORY_TITLE}</h2>
+        <p className="text-xl md:text-2xl text-white/80 font-semibold">{UI.STAGE_CLEAR_MESSAGE(stage)}</p>
+
+        {stage < GAME_STRATEGY.STAGE.TOTAL_STAGES ? (
+          <button
+            onClick={() => { nextStage(); setScreen('game'); }}
+            className="btn-primary text-xl md:text-2xl px-10 md:px-14 py-4 md:py-6 shadow-2xl hover:scale-105 transition-transform"
+          >
+            {UI.NEXT_STAGE_BUTTON}
+          </button>
+        ) : (
+          <div className="flex flex-col items-center gap-6">
+            <p className="text-2xl md:text-4xl text-white font-bold">{UI.ALL_CLEAR_MESSAGE}</p>
+            <button
+              onClick={() => setScreen('menu')}
+              className="btn-primary px-10 py-4"
+            >
+              {UI.MAIN_MENU_BUTTON}
+            </button>
+          </div>
+        )}
+      </div>
+    </motion.div>
   );
 };
 
 const App: React.FC = () => {
   const { screen, setScreen, resetGame } = useGameStore();
 
+  const playlist = React.useMemo(() => ['/bgm_001.ogg', '/bgm_002.ogg', '/bgm_003.ogg', '/bgm_004.ogg', '/bgm_005.ogg'], []);
+  const shuffledRef = React.useRef<string[]>([]);
+  const currentIndexRef = React.useRef(0);
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    const playlist = ['/bgm_001.m4a', '/bgm_002.m4a', '/bgm_003.m4a'];
-    const randomTrack = playlist[Math.floor(Math.random() * playlist.length)];
-    const audio = new Audio(randomTrack);
-    audio.loop = true;
+    // Shuffle playlist on start
+    shuffledRef.current = [...playlist].sort(() => Math.random() - 0.5);
+
+    const audio = new Audio(shuffledRef.current[0]);
     audio.volume = 0.5;
     audioRef.current = audio;
+
+    const playNext = () => {
+      currentIndexRef.current = (currentIndexRef.current + 1) % shuffledRef.current.length;
+      audio.src = shuffledRef.current[currentIndexRef.current];
+      audio.play().catch(err => console.log("Next track play blocked", err));
+    };
+
+    audio.addEventListener('ended', playNext);
 
     const playAudio = () => {
       if (screen !== 'menu') {
@@ -92,11 +128,12 @@ const App: React.FC = () => {
 
     return () => {
       audio.pause();
+      audio.removeEventListener('ended', playNext);
       ['click', 'mousedown', 'keydown', 'touchstart'].forEach(event => {
         window.removeEventListener(event, playAudio);
       });
     };
-  }, [screen]);
+  }, [playlist]);
 
   useEffect(() => {
     if (audioRef.current) {

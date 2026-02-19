@@ -24,8 +24,8 @@ function generateGround(stage: number): Block[] {
     const stageLength = getStageLength(stage);
     const bossTriggerX = getBossTriggerX(stage);
 
-    while (x < stageLength) {
-        // Holes appear only in the playable middle area
+    while (x < stageLength + 1000) {
+        // Holes appear only in the playable middle area up to boss trigger
         if (x > 1000 && x < bossTriggerX - 500 && Math.random() < STAGE.GROUND_HOLE_CHANCE) {
             const holeSize = Math.floor(Math.random() * 2) + 1;
             x += holeSize * UNIT_SIZE;
@@ -55,19 +55,18 @@ function generatePlatforms(stage: number): Block[] {
     const platforms: Block[] = [];
     const bossTriggerX = getBossTriggerX(stage);
     const startX = 600;
-    const endX = bossTriggerX - 600;
 
-    const floorYs = [
-        GROUND_Y - UNIT_SIZE * 2, // 2F
-        GROUND_Y - UNIT_SIZE * 4, // 3F
-        GROUND_Y - UNIT_SIZE * 6, // 4F
-    ];
+    const floorYs: number[] = [];
+    const floorCount = STAGE.PLATFORMS.FLOOR_COUNT || 3;
+    for (let i = 0; i < floorCount; i++) {
+        floorYs.push(GROUND_Y - UNIT_SIZE * (2 + i * 2));
+    }
 
     floorYs.forEach((floorY, floorIdx) => {
         // Stagger the horizontal start for each floor
         let x = startX + (floorIdx * 200);
 
-        while (x < endX) {
+        while (x < bossTriggerX + 1500) {
             // Random chance to create a longer gap between platforms on this floor
             if (Math.random() < STAGE.PLATFORMS.FLOOR_GAP_CHANCE) {
                 x += UNIT_SIZE * (Math.floor(Math.random() * 4) + 2);
@@ -80,8 +79,6 @@ function generatePlatforms(stage: number): Block[] {
 
             for (let i = 0; i < platformLen; i++) {
                 const bx = x + i * UNIT_SIZE;
-                if (bx >= endX) break;
-
                 // Randomly place question blocks
                 const blockType: 'brick' | 'question' = Math.random() < STAGE.QUESTION_BLOCK_CHANCE ? 'question' : 'brick';
 
@@ -177,4 +174,30 @@ export function generateStage(stage: number): Entity[] {
     const platforms = generatePlatforms(stage);
     const obstacles = generateObstacles(stage);
     return [...ground, ...platforms, ...obstacles];
+}
+
+/** Generate a single small platform during boss fight */
+export function spawnBossPlatform(entities: Entity[], cameraX: number, floorCount: number): void {
+    const floorIdx = Math.floor(Math.random() * floorCount);
+    const floorY = GROUND_Y - UNIT_SIZE * (2 + floorIdx * 2);
+    const platformLen = Math.floor(Math.random() * 2) + 1; // Smaller platforms
+    const x = cameraX + Math.random() * 800; // Spawn randomly within screen
+
+    for (let i = 0; i < platformLen; i++) {
+        const bx = x + i * UNIT_SIZE;
+        // Don't spawn if something is already there approximately
+        if (entities.some(e => e.type === 'block' && Math.abs(e.pos.x - bx) < 10 && Math.abs(e.pos.y - floorY) < 10)) continue;
+
+        const blockType: 'brick' | 'question' = Math.random() < STAGE.QUESTION_BLOCK_CHANCE ? 'question' : 'brick';
+
+        entities.push({
+            id: getUniqueId(`boss-platform-${Date.now()}-${i}`),
+            pos: { x: bx, y: floorY },
+            vel: { x: 0, y: 0 }, // Static tiles!
+            width: UNIT_SIZE,
+            height: UNIT_SIZE,
+            type: 'block',
+            blockType,
+        } as Block);
+    }
 }

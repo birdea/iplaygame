@@ -29,12 +29,22 @@ export function spawnGroundItem(
         id: `item-${Date.now()}-${Math.random()}`,
         pos: { x: block.pos.x + block.width / 2 - 12, y: block.pos.y - 28 },
         vel: { x: goLeft ? -ITEMS.ROAM_SPEED : ITEMS.ROAM_SPEED, y: ITEMS.POP_VELOCITY_Y },
-        width: 24,
-        height: 24,
+        width: 24 * (ITEMS.SIZE_MULTIPLIER || 1),
+        height: 24 * (ITEMS.SIZE_MULTIPLIER || 1),
         powerup,
         spawnedAt: Date.now(),
         isPopping: true,
     };
+}
+
+export function getRandomItemType(): 'bigBullet' | 'fastRun' | 'hp' | 'shield' | 'ammo' {
+    const rand = Math.random();
+    const { BIG_BULLET, FAST_RUN, SHIELD, AMMO } = ITEMS.DROP_WEIGHTS;
+    if (rand < BIG_BULLET) return 'bigBullet';
+    if (rand < BIG_BULLET + FAST_RUN) return 'fastRun';
+    if (rand < BIG_BULLET + FAST_RUN + SHIELD) return 'shield';
+    if (rand < BIG_BULLET + FAST_RUN + SHIELD + AMMO) return 'ammo';
+    return 'hp';
 }
 
 export interface GroundItemUpdateResult {
@@ -130,6 +140,7 @@ export interface MonsterUpdateResult {
     entities: Entity[];
     bossDefeated: boolean;
     scoreGained: number;
+    lastBlockHitSwingTime: number;
 }
 
 /** Move all monsters and check monster-player collisions */
@@ -137,21 +148,27 @@ export function updateMonsters(
     entities: Entity[],
     player: Entity,
     takeDamage: (amount: number) => boolean,
-    addScore: (amount: number) => void,
     time: number,
     lastSwingTime: number = 0,
+    lastBlockHitSwingTime: number = 0,
     effects: Effect[] = [],
+    groundItems: GroundItem[] = [],
     cameraX: number = 0,
     CLUB_RANGE: number = 100,
     damage: number = 1,
+    onBossHit?: (isTailHit: boolean) => void,
 ): MonsterUpdateResult {
     const toRemove = new Set<string>();
     const isSwinging = (time - lastSwingTime) < 500;
     let bossDefeated = false;
     let scoreGainedTotal = 0;
+    let currentLastBlockHitSwingTime = lastBlockHitSwingTime;
+
+    // Pre-calculate blocks for edge-check
+    const blocks = entities.filter(e => e.type === 'block');
 
     for (const e of entities) {
-        if (e.type !== 'monster' && e.type !== 'boss') continue;
+        if (e.type !== 'monster' && e.type !== 'boss' && e.type !== 'block') continue;
 
         if (e.type === 'monster') {
             // Remove if far off screen (left)
@@ -166,60 +183,114 @@ export function updateMonsters(
         if (isSwinging) {
             const playerCX = player.pos.x + player.width / 2;
             const playerCY = player.pos.y + 30; // Attack center (top/shoulder area)
-            const monsterCX = e.pos.x + e.width / 2;
-            const monsterCY = e.pos.y + e.height / 2;
+            const targetCX = e.pos.x + e.width / 2;
+            const targetCY = e.pos.y + e.height / 2;
 
-            // Point-to-Rectangle distance: 
-            // Calculate distance from player's attack center to the nearest point on the monster's hitbox
-            const dx_center = monsterCX - playerCX;
-            const dy_center = monsterCY - playerCY;
+            const dx_center = targetCX - playerCX;
+            const dy_center = targetCY - playerCY;
+            const distSq = dx_center * dx_center + dy_center * dy_center;
+
+            // Optimization: Skip if way out of range
+            if (distSq > (CLUB_RANGE + 100) ** 2) continue;
+
             const angle = Math.atan2(dy_center, dx_center);
 
-            // Point-to-Rectangle distance for range check
-            const dx = Math.abs(playerCX - monsterCX) - e.width / 2;
-            const dy = Math.abs(playerCY - monsterCY) - e.height / 2;
+            const attackDir = player.attackDir || player.facing || 'right';
+            const range = (GAME_STRATEGY.ATTACK as any)[attackDir.toUpperCase()] || GAME_STRATEGY.ATTACK.RIGHT;
+
+            let isWithinDirection = false;
+            if (attackDir === 'left') {
+                const normAngle = angle < 0 ? angle + Math.PI * 2 : angle;
+                isWithinDirection = normAngle >= range.MIN && normAngle <= range.MAX;
+            } else {
+                isWithinDirection = angle >= range.MIN && angle <= range.MAX;
+            }
+
+            // Hitbox distance check
+            const dx = Math.abs(playerCX - targetCX) - e.width / 2;
+            const dy = Math.abs(playerCY - targetCY) - e.height / 2;
             const distance = Math.sqrt(Math.max(0, dx) ** 2 + Math.max(0, dy) ** 2);
 
-            // 2 o'clock is -30 deg (-PI/6), 4 o'clock is +30 deg (+PI/6)
-            const isWithinDirection = angle >= -Math.PI / 6 && angle <= Math.PI / 6;
-
-            // Use e.lastHitBySwing to prevent multi-hits in one swing
             if (distance < CLUB_RANGE && e.lastHitBySwing !== lastSwingTime && isWithinDirection) {
-                e.lastHitBySwing = lastSwingTime;
-                e.hp = (e.hp || 1) - damage;
-                spawnSparks(effects, e.pos.x + e.width / 2, e.pos.y + e.height / 2, e.type === 'boss' ? '#FFEB3B' : '#FF5722');
+                if (e.type === 'block') {
+                    const blk = e as any;
+                    if (blk.blockType === 'brick' || blk.blockType === 'question') {
+                        // Edge Check: Only leftmost or rightmost tiles in a platform can be broken by weapon
+                        const hasLeft = blocks.some(b => b.id !== e.id && b.pos.y === e.pos.y && Math.abs(b.pos.x - (e.pos.x - e.width)) < 5);
+                        const hasRight = blocks.some(b => b.id !== e.id && b.pos.y === e.pos.y && Math.abs(b.pos.x - (e.pos.x + e.width)) < 5);
 
+                        const isEdge = !hasLeft || !hasRight;
+
+                        if (isEdge) {
+                            // Only 1 block hit per swing
+                            if (currentLastBlockHitSwingTime === lastSwingTime) continue;
+
+                            blk.lastHitBySwing = lastSwingTime;
+                            blk.hitCount = (blk.hitCount || 0) + 1;
+                            currentLastBlockHitSwingTime = lastSwingTime;
+                            spawnSparks(effects, targetCX, targetCY, '#795548');
+
+                            if (blk.hitCount >= GAME_STRATEGY.STAGE.PLATFORMS.BLOCK_MAX_HITS) {
+                                toRemove.add(e.id);
+                                // Destruction by weapon: Only question blocks drop items
+                                if (blk.blockType === 'question') {
+                                    const powerup = getRandomItemType();
+                                    groundItems.push(spawnGroundItem(blk, powerup));
+                                }
+                            }
+                            // Flail stops at block
+                            continue;
+                        }
+                    }
+                } else {
+                    // Monster or Boss hit
+                    e.lastHitBySwing = lastSwingTime;
+                    e.hp = (e.hp || 1) - damage;
+                    spawnSparks(effects, targetCX, targetCY, e.type === 'boss' ? '#FFEB3B' : '#FF5722');
+
+                    if (e.type === 'boss' && onBossHit) {
+                        const centerX = e.pos.x + e.width / 2;
+                        // If facing left, head is left, tail is right. Hit from right = tail hit.
+                        const isTailHit = (e.facing === 'left' && playerCX > centerX) ||
+                            (e.facing === 'right' && playerCX < centerX);
+                        onBossHit(isTailHit);
+                    }
+
+                    if (e.hp <= 0) {
+                        toRemove.add(e.id);
+                        if (e.type === 'monster') {
+                            scoreGainedTotal += SCORE.MONSTER_KILL;
+                        } else if (e.type === 'boss') {
+                            scoreGainedTotal += SCORE.BOSS_KILL;
+                            bossDefeated = true;
+                        }
+                    }
+                    if (e.type === 'monster') continue;
+                }
+            }
+        }
+
+        if (e.type === 'monster') {
+            // 2. Stomp from above
+            const isCurrentlyOverlapping = aabbOverlap(player, e);
+            if (isCurrentlyOverlapping && player.vel.y > 0 && player.pos.y + player.height - player.vel.y <= e.pos.y + 20) {
+                e.hp = (e.hp || 1) - 1;
+                player.vel.y = -10;
+                spawnSparks(effects, e.pos.x + e.width / 2, e.pos.y + e.height / 2, '#4CAF50');
                 if (e.hp <= 0) {
                     toRemove.add(e.id);
-                    if (e.type === 'monster') {
-                        scoreGainedTotal += SCORE.MONSTER_KILL;
-                    } else if (e.type === 'boss') {
-                        scoreGainedTotal += SCORE.BOSS_KILL;
-                        bossDefeated = true;
-                    }
+                    scoreGainedTotal += SCORE.STOMP_KILL;
                 }
-                if (e.type === 'monster') continue; // Only for monsters, boss stays
+                continue;
             }
-        }
 
-        if (e.type === 'boss') continue; // Boss doesn't do stomp/damage here, handled in GameCanvas
-
-        // 2. Stomp from above (Check this WITHOUT the 0.8 ratio for easier stomping)
-        const isCurrentlyOverlapping = aabbOverlap(player, e);
-        if (isCurrentlyOverlapping && player.vel.y > 0 && player.pos.y + player.height - player.vel.y <= e.pos.y + 20) {
-            e.hp = (e.hp || 1) - 1;
-            player.vel.y = -10;
-            spawnSparks(effects, e.pos.x + e.width / 2, e.pos.y + e.height / 2, '#4CAF50');
-            if (e.hp <= 0) {
-                toRemove.add(e.id);
-                addScore(SCORE.STOMP_KILL);
+            // 3. Normal Collision
+            if (isCurrentlyOverlapping && aabbOverlap(player, e, PLAYER.HITBOX_RATIO)) {
+                if (takeDamage(1)) {
+                    player.pos.x -= PLAYER.KNOCKBACK_DISTANCE;
+                    spawnSparks(effects, player.pos.x + player.width / 2, player.pos.y + player.height / 2, '#F44336');
+                }
             }
-            continue; // Successfully stomped, don't take damage
-        }
-
-        // 3. Normal Collision (Take damage) - Use strategy hitbox ratio
-        if (isCurrentlyOverlapping && aabbOverlap(player, e, PLAYER.HITBOX_RATIO)) {
-            if (takeDamage(1)) player.pos.x -= PLAYER.KNOCKBACK_DISTANCE;
         }
     }
 
@@ -230,7 +301,8 @@ export function updateMonsters(
     return {
         entities: resultEntities,
         bossDefeated,
-        scoreGained: scoreGainedTotal
+        scoreGained: scoreGainedTotal,
+        lastBlockHitSwingTime: currentLastBlockHitSwingTime
     };
 }
 
@@ -249,6 +321,7 @@ export function updateBullets(
     takeDamage: (amount: number) => boolean,
     cameraX: number,
     effects: Effect[] = [],
+    onBossHit?: (isTailHit: boolean) => void,
 ): BulletCollisionResult {
     const bulletsToRemove = new Set<string>();
     const entitiesToRemove = new Set<string>();
@@ -266,6 +339,13 @@ export function updateBullets(
                 boss.hp = (boss.hp || 0) - (b.damage || 1);
                 bulletsToRemove.add(b.id);
                 spawnSparks(effects, b.pos.x, b.pos.y, '#FFEB3B');
+
+                if (onBossHit) {
+                    const centerX = boss.pos.x + boss.width / 2;
+                    const isTailHit = (boss.facing === 'left' && b.pos.x > centerX) ||
+                        (boss.facing === 'right' && b.pos.x < centerX);
+                    onBossHit(isTailHit);
+                }
                 if (boss.hp! <= 0) {
                     entitiesToRemove.add(boss.id);
                     scoreGained += SCORE.BOSS_KILL;

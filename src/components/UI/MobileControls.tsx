@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useGameStore } from '../../store/useGameStore';
+import { HUD } from './HUD';
 
 interface MobileControlsProps {
     setKey: (code: string, isPressed: boolean) => void;
@@ -120,15 +121,18 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ setKey }) => {
                 <Joystick onMove={handleJoystick} />
             </div>
 
+            {/* Center: HUD */}
+            <HUD />
+
             {/* Right: Action Buttons (WASD) */}
             <div className="right-controls">
                 <div className="wasd-pad">
                     <div />
-                    <Button code="KeyW" label="W" className="btn-w" onHandlePress={handlePress} />
+                    <Button code="KeyW" label={<span style={{ fontSize: '0.8rem' }}>UP</span>} className="btn-w" onHandlePress={handlePress} />
                     <div />
-                    <Button code="KeyA" label="A" className={`btn-a ${aCharged ? 'charged' : ''}`} onHandlePress={handlePress} />
-                    <Button code="KeyS" label="S" className="btn-s" onHandlePress={handlePress} />
-                    <Button code="KeyD" label="D" className="btn-d" onHandlePress={handlePress} />
+                    <Button code="KeyA" label={<span style={{ fontSize: '0.8rem' }}>GUN</span>} className="btn-a" onHandlePress={handlePress} />
+                    <Button code="KeyS" label={<span style={{ fontSize: '0.8rem' }}>CLUB</span>} className={`btn-s ${aCharged ? 'charged' : ''}`} onHandlePress={handlePress} />
+                    <Button code="KeyD" label={<span style={{ fontSize: '0.8rem' }}>SHIELD</span>} className="btn-d" onHandlePress={handlePress} />
                 </div>
             </div>
         </div>

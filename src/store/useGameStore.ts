@@ -14,6 +14,8 @@ export interface GameState {
   isPaused: boolean;
   stage: number;
   aCharged: boolean;
+  ammo: number;
+  shields: number;
 
   // Actions
   setScreen: (screen: GameState['screen']) => void;
@@ -28,6 +30,8 @@ export interface GameState {
     isPaused: boolean;
     stage: number;
     aCharged: boolean;
+    ammo: number;
+    shields: number;
   }) => void;
 }
 
@@ -44,6 +48,8 @@ export const useGameStore = create<GameState>((set) => ({
     bigBullet: 0,
     fastRun: 0,
   },
+  ammo: 0,
+  shields: 0,
 
   setScreen: (screen) => set({ screen }),
 
@@ -64,6 +70,8 @@ export const useGameStore = create<GameState>((set) => ({
     screen: 'game',
     isPaused: false,
     powerups: { bigBullet: 0, fastRun: 0 },
+    ammo: 0,
+    shields: 0,
   }),
 
   nextStage: () => set((state) => ({ stage: Math.min(state.stage + 1, GAME_STRATEGY.STAGE.TOTAL_STAGES) })),
