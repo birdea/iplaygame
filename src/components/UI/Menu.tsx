@@ -4,37 +4,41 @@ import { Play, Settings as SettingsIcon } from 'lucide-react';
 import { useGameStore } from '../../store/useGameStore';
 import { GAME_STRATEGY } from '../Game/GameStrategy';
 
-// 인트로 시퀀스: main_logo.jpg (2초) → dragon_img.jpg (2초) → dragon_intro.mp4 (루프)
+// 인트로 시퀀스: main_logo.jpg (2초) → dragon_img.jpg (2초) → dragon_intro.mp4 (재생 완료) → 반복
 type IntroPhase = 'logo1' | 'logo2' | 'video';
 
-const INTRO_PHASES: { phase: IntroPhase; duration: number }[] = [
-    { phase: 'logo1', duration: 2000 },
-    { phase: 'logo2', duration: 2000 },
-    { phase: 'video', duration: Infinity },
-];
+const INTRO_DURATIONS: Record<IntroPhase, number> = {
+    logo1: 2000,
+    logo2: 2000,
+    video: Infinity, // 동영상은 ended 이벤트로 전환
+};
+const PHASE_ORDER: IntroPhase[] = ['logo1', 'logo2', 'video'];
 
 export const Menu: React.FC = () => {
     const setScreen = useGameStore((state) => state.setScreen);
-    const [introPhase, setIntroPhase] = useState<IntroPhase>('logo1');
+    const [phaseIndex, setPhaseIndex] = useState(0);
+    const introPhase = PHASE_ORDER[phaseIndex];
     const videoRef = useRef<HTMLVideoElement>(null);
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    useEffect(() => {
-        const runPhase = (index: number) => {
-            const current = INTRO_PHASES[index];
-            if (!current) return;
-            setIntroPhase(current.phase);
-            if (current.duration !== Infinity) {
-                timerRef.current = setTimeout(() => runPhase(index + 1), current.duration);
-            }
-        };
-        runPhase(0);
-        return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-    }, []);
+    const goNextPhase = () => {
+        setPhaseIndex((prev) => (prev + 1) % PHASE_ORDER.length);
+    };
 
-    // video 페이즈 진입 시 자동 재생
+    useEffect(() => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        const duration = INTRO_DURATIONS[introPhase];
+        // 이미지 페이즈만 타이머로 자동 전환 (video는 ended 이벤트 처리)
+        if (duration !== Infinity) {
+            timerRef.current = setTimeout(goNextPhase, duration);
+        }
+        return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+    }, [introPhase]);
+
+    // video 페이즈 진입 시 처음부터 재생
     useEffect(() => {
         if (introPhase === 'video' && videoRef.current) {
+            videoRef.current.currentTime = 0;
             videoRef.current.play().catch(() => { });
         }
     }, [introPhase]);
@@ -124,7 +128,7 @@ export const Menu: React.FC = () => {
                         />
                     )}
 
-                    {/* Phase 3: main_logo_dragon_knight_intro.mp4 (무한 루프) */}
+                    {/* Phase 3: main_logo_dragon_knight_intro.mp4 → 재생 완료 후 logo1로 복귀 */}
                     {introPhase === 'video' && (
                         <motion.div
                             key="video"
@@ -138,9 +142,9 @@ export const Menu: React.FC = () => {
                                 ref={videoRef}
                                 src="/logo/main_logo_dragon_knight_intro.mp4"
                                 autoPlay
-                                loop
                                 muted
                                 playsInline
+                                onEnded={goNextPhase}
                                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                             />
                         </motion.div>

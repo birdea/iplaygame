@@ -522,7 +522,7 @@ export const GameCanvas: React.FC = () => {
                                 onClick={() => setScreen('menu')}
                                 className="btn-primary w-full text-lg"
                             >
-                                CONFIRM & STOP
+                                STOP
                             </button>
                             <button
                                 onClick={() => actionsRef.current.togglePaused(false)}
