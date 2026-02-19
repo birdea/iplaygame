@@ -64,6 +64,8 @@ export const GameCanvas: React.FC = () => {
         gs.powerups = { ...store.powerups };
         gs.ammo = store.ammo;
         gs.shields = store.shields;
+        gs.player.width = store.playerWidth;
+        gs.player.height = store.playerHeight;
         gs.entities = generateStage(store.stage);
         gsRef.current = gs;
 
@@ -78,6 +80,8 @@ export const GameCanvas: React.FC = () => {
                 aCharged: g.aCharged,
                 ammo: g.ammo,
                 shields: g.shields,
+                shieldUntil: g.shieldUntil,
+                blockCooldownUntil: g.blockCooldownUntil,
             });
         };
         actionsRef.current = createGameActions(gs, syncFn);
@@ -173,6 +177,25 @@ export const GameCanvas: React.FC = () => {
                     gs.onGround = false;
                 }
 
+                // Crouching
+                const currentStore = useGameStore.getState();
+                const isCrouching = keys.current['ArrowDown'] && gs.onGround;
+                const targetHeight = isCrouching
+                    ? currentStore.playerHeight * (GAME_STRATEGY.PLAYER as any).CROUCH_HEIGHT_RATIO
+                    : currentStore.playerHeight;
+
+                if (p.height !== targetHeight) {
+                    if (isCrouching) {
+                        p.pos.y += (p.height - targetHeight); // Offset Y so it looks like crouching down
+                    } else {
+                        // Check if can stand up (no ceiling)
+                        // For simplicity, just stand up for now, but in a real game we'd check collision above
+                        p.pos.y -= (targetHeight - p.height);
+                    }
+                    p.height = targetHeight;
+                }
+                gs.isCrouching = isCrouching;
+
                 // A key: Shoot Bullet (Special Attack)
                 if (keys.current['KeyA'] && time - gs.lastShootTime > 300 && gs.ammo > 0) {
                     const isBig = gs.powerups.bigBullet > Date.now();
@@ -212,10 +235,16 @@ export const GameCanvas: React.FC = () => {
                     gs.aCharged = false;
                 }
 
-                // D key: Use Shield (Defense)
+                // D key: Use Shield (Defense) or Parry
                 if (keys.current['KeyD'] && time - gs.lastShieldTime > 500) {
-                    if (actions.useShield()) {
-                        gs.lastShieldTime = time;
+                    if (gs.shields > 0) {
+                        if (actions.useShield()) {
+                            gs.lastShieldTime = time;
+                        }
+                    } else {
+                        if (actions.activateBlock()) {
+                            gs.lastShieldTime = time;
+                        }
                     }
                 }
 
@@ -490,7 +519,7 @@ export const GameCanvas: React.FC = () => {
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 3;
             ctx.shadowOffsetY = 3;
-            drawPlayer(ctx, p, time, isMoving, faceImage.current, Date.now() < gs.invincibleUntil, gs.powerups, gs.lastSwingTime, gs.shieldUntil, gs.aCharged, gs.lastMegaSwingTime, selectedWeapon);
+            drawPlayer(ctx, p, time, isMoving, faceImage.current, Date.now() < gs.invincibleUntil, gs.powerups, gs.lastSwingTime, gs.shieldUntil, gs.aCharged, gs.lastMegaSwingTime, selectedWeapon, gs.isBlocking, gs.isCrouching);
             ctx.restore();
 
             ctx.restore();

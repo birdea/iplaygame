@@ -196,7 +196,12 @@ const WeaponCard: React.FC<{
 };
 
 export const Settings: React.FC = () => {
-    const { faces, selectedFaceIndex, selectedWeapon, addFace, selectFace, setWeapon, setScreen } = useGameStore();
+    const {
+        faces, selectedFaceIndex, selectedWeapon,
+        playerWidth, playerHeight,
+        addFace, selectFace, setWeapon, setScreen,
+        setPlayerWidth, setPlayerHeight
+    } = useGameStore();
     const webcamRef = useRef<Webcam>(null);
     const [isCameraOpen, setIsCameraOpen] = useState(false);
 
@@ -232,6 +237,35 @@ export const Settings: React.FC = () => {
                             onSelect={() => setWeapon(w.type)}
                         />
                     ))}
+                </div>
+            </div>
+
+            {/* Player Dimensions */}
+            <div className="glass-morphism p-4 md:p-6 mb-6">
+                <h3 className="text-xl font-semibold mb-3">Player Dimensions (10px - 100px)</h3>
+                <div className="flex gap-8">
+                    <div className="flex flex-col gap-2">
+                        <label className="text-sm text-white/60 text-indigo-200">Width (px)</label>
+                        <input
+                            type="number"
+                            min={10}
+                            max={100}
+                            value={playerWidth}
+                            onChange={(e) => setPlayerWidth(Math.max(10, Math.min(100, parseInt(e.target.value) || 10)))}
+                            className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500 w-32"
+                        />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                        <label className="text-sm text-white/60 text-indigo-200">Height (px)</label>
+                        <input
+                            type="number"
+                            min={10}
+                            max={100}
+                            value={playerHeight}
+                            onChange={(e) => setPlayerHeight(Math.max(10, Math.min(100, parseInt(e.target.value) || 10)))}
+                            className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500 w-32"
+                        />
+                    </div>
                 </div>
             </div>
 
