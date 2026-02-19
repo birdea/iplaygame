@@ -4,7 +4,7 @@ import { aabbOverlap } from './physics';
 import { createMonster } from './stageGenerator';
 import { GAME_STRATEGY } from './GameStrategy';
 
-const { ITEMS, SCORE, MONSTERS, PLAYER, BOSS } = GAME_STRATEGY;
+const { ITEMS, SCORE, PLAYER, BOSS } = GAME_STRATEGY;
 
 /** Create a player bullet */
 export function createBullet(player: Entity, isBigBullet: boolean): Entity {
@@ -141,6 +141,8 @@ export interface MonsterUpdateResult {
     bossDefeated: boolean;
     scoreGained: number;
     lastBlockHitSwingTime: number;
+    hitEnemyCount: number;
+    stompCount: number;
 }
 
 /** Move all monsters and check monster-player collisions */
@@ -157,12 +159,19 @@ export function updateMonsters(
     CLUB_RANGE: number = 100,
     damage: number = 1,
     onBossHit?: (isTailHit: boolean) => void,
+    onHitEnemy?: () => void,
+    onStompEnemy?: () => void,
+    onPlayerHurt?: () => void,
+    swingDuration: number = 500,
 ): MonsterUpdateResult {
     const toRemove = new Set<string>();
-    const isSwinging = (time - lastSwingTime) < 500;
+    // Bug fix: swingDuration을 사용하여 찌르기 페이즈(700ms) 판정 시간 보장
+    const isSwinging = lastSwingTime > 0 && (time - lastSwingTime) < swingDuration;
     let bossDefeated = false;
     let scoreGainedTotal = 0;
     let currentLastBlockHitSwingTime = lastBlockHitSwingTime;
+    let hitEnemyCount = 0;
+    let stompCount = 0;
 
     // Pre-calculate blocks for edge-check
     const blocks = entities.filter(e => e.type === 'block');
@@ -176,6 +185,19 @@ export function updateMonsters(
                 toRemove.add(e.id);
                 continue;
             }
+
+            // ── Bug 4 fix: 몬스터 방향 전환 ──
+            // 화면 우측 끝(cameraX+1100) 이상이면 왼쪽으로, cameraX-100 이하이면 오른쪽으로
+            const screenRight = cameraX + 1100;
+            const screenLeft = cameraX;
+            if (e.vel.x > 0 && e.pos.x > screenRight) {
+                e.vel.x = -Math.abs(e.vel.x);
+            } else if (e.vel.x < 0 && e.pos.x < screenLeft - 50) {
+                // 화면 완전 밖으로 나가면 제거
+                toRemove.add(e.id);
+                continue;
+            }
+
             e.pos.x += e.vel.x;
         }
 
@@ -247,6 +269,8 @@ export function updateMonsters(
                     e.lastHitBySwing = lastSwingTime;
                     e.hp = (e.hp || 1) - damage;
                     spawnSparks(effects, targetCX, targetCY, e.type === 'boss' ? '#FFEB3B' : '#FF5722');
+                    hitEnemyCount++;
+                    onHitEnemy?.();
 
                     if (e.type === 'boss' && onBossHit) {
                         const centerX = e.pos.x + e.width / 2;
@@ -277,6 +301,8 @@ export function updateMonsters(
                 e.hp = (e.hp || 1) - 1;
                 player.vel.y = -10;
                 spawnSparks(effects, e.pos.x + e.width / 2, e.pos.y + e.height / 2, '#4CAF50');
+                stompCount++;
+                onStompEnemy?.();
                 if (e.hp <= 0) {
                     toRemove.add(e.id);
                     scoreGainedTotal += SCORE.STOMP_KILL;
@@ -289,6 +315,7 @@ export function updateMonsters(
                 if (takeDamage(1)) {
                     player.pos.x -= PLAYER.KNOCKBACK_DISTANCE;
                     spawnSparks(effects, player.pos.x + player.width / 2, player.pos.y + player.height / 2, '#F44336');
+                    onPlayerHurt?.();
                 }
             }
         }
@@ -302,7 +329,9 @@ export function updateMonsters(
         entities: resultEntities,
         bossDefeated,
         scoreGained: scoreGainedTotal,
-        lastBlockHitSwingTime: currentLastBlockHitSwingTime
+        lastBlockHitSwingTime: currentLastBlockHitSwingTime,
+        hitEnemyCount,
+        stompCount,
     };
 }
 
@@ -322,6 +351,8 @@ export function updateBullets(
     cameraX: number,
     effects: Effect[] = [],
     onBossHit?: (isTailHit: boolean) => void,
+    onHitEnemy?: () => void,
+    onPlayerHurt?: () => void,
 ): BulletCollisionResult {
     const bulletsToRemove = new Set<string>();
     const entitiesToRemove = new Set<string>();
@@ -339,6 +370,7 @@ export function updateBullets(
                 boss.hp = (boss.hp || 0) - (b.damage || 1);
                 bulletsToRemove.add(b.id);
                 spawnSparks(effects, b.pos.x, b.pos.y, '#FFEB3B');
+                onHitEnemy?.();
 
                 if (onBossHit) {
                     const centerX = boss.pos.x + boss.width / 2;
@@ -360,6 +392,7 @@ export function updateBullets(
                     ent.hp = (ent.hp || 1) - (b.damage || 1);
                     bulletsToRemove.add(b.id);
                     spawnSparks(effects, b.pos.x, b.pos.y, '#FFCC80');
+                    onHitEnemy?.();
                     if (ent.hp <= 0) {
                         entitiesToRemove.add(ent.id);
                         scoreGained += SCORE.STOMP_KILL;
@@ -372,6 +405,7 @@ export function updateBullets(
                     bulletsToRemove.add(b.id);
                     player.pos.x -= PLAYER.KNOCKBACK_DISTANCE / 2;
                     spawnSparks(effects, b.pos.x, b.pos.y, '#F44336');
+                    onPlayerHurt?.();
                 }
             }
         }
@@ -408,6 +442,7 @@ export function spawnContinuousMonster(
     time: number,
     lastSpawnTime: { current: number }
 ): void {
+    const { MONSTERS } = GAME_STRATEGY;
     const baseInterval = Math.max(MONSTERS.MIN_SPAWN_INTERVAL_MS, MONSTERS.BASE_SPAWN_INTERVAL_MS - stage * 200);
     const SPAWN_INTERVAL = baseInterval / Math.pow(MONSTERS.SPAWN_FREQ_SCALING, stage - 1);
 
@@ -418,4 +453,3 @@ export function spawnContinuousMonster(
         entities.push(createMonster(spawnX, monsterSpeed));
     }
 }
-

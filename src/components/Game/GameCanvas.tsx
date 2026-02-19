@@ -26,6 +26,10 @@ import {
 import { createInitialGameState, createGameActions } from './gameState';
 import { AMMO_REFILL, SHIELD_REFILL, MINIMAP_WIDTH, MINIMAP_HEIGHT } from '../../constants';
 import { GAME_STRATEGY } from './GameStrategy';
+import {
+    resumeAudio, playHitEnemy, playStompEnemy, playPlayerHurt,
+    playShoot, playBossHit, playItemCollect,
+} from './soundManager';
 
 const { PHYSICS, PLAYER, STAGE, SCORE, ITEMS, BOSS } = GAME_STRATEGY;
 
@@ -109,6 +113,18 @@ export const GameCanvas: React.FC = () => {
         });
     }, [faces, selectedFaceIndex]);
 
+    // Audio Context 활성화 (브라우저는 첫 사용자 인터랙션 전까지 Audio 차단)
+    // once: true를 사용하지 않음 — AudioContext는 포커스 이탈 후 재-suspended될 수 있음
+    useEffect(() => {
+        const activate = () => resumeAudio();
+        window.addEventListener('keydown', activate);
+        window.addEventListener('pointerdown', activate);
+        return () => {
+            window.removeEventListener('keydown', activate);
+            window.removeEventListener('pointerdown', activate);
+        };
+    }, []);
+
     // -----------------------------------------------------------------------
     // Game Loop
     // -----------------------------------------------------------------------
@@ -163,6 +179,7 @@ export const GameCanvas: React.FC = () => {
                     gs.bullets.push(createBullet(p, isBig));
                     gs.lastShootTime = time;
                     gs.ammo--;
+                    playShoot();
                 }
 
                 // S/W keys: Flail Attacks (S=Basic, W=Upper)
@@ -311,12 +328,12 @@ export const GameCanvas: React.FC = () => {
                 // Monster logic
                 spawnContinuousMonster(gs.entities, gs.cameraX, gs.stage, time, lastMonsterSpawnTime);
 
-                const isMegaSwing = (time - gs.lastMegaSwingTime) < 600;
+                const isMegaSwing = (time - gs.lastMegaSwingTime) < 700;
                 const effectiveRange = isMegaSwing ? PLAYER.CLUB_RANGE * PLAYER.MEGA_SWING_RANGE_MULT : PLAYER.CLUB_RANGE;
 
                 const onBossHit = (isTailHit: boolean) => {
                     if (isTailHit && gs.bossActive && !gs.bossTactics.turnAtTime) {
-                        gs.bossTactics.turnAtTime = time + 5000;
+                        gs.bossTactics.turnAtTime = time + 500;
                         const bossEntity = gs.entities.find(e => e.type === 'boss');
                         if (bossEntity) {
                             gs.bossTactics.turnTargetFacing = bossEntity.facing === 'left' ? 'right' : 'left';
@@ -330,7 +347,18 @@ export const GameCanvas: React.FC = () => {
                     gs.lastBlockHitSwingTime,
                     gs.effects, gs.groundItems, gs.cameraX, effectiveRange,
                     isMegaSwing ? PLAYER.MEGA_SWING_DAMAGE_MULT : 1,
-                    onBossHit
+                    onBossHit,
+                    () => {
+                        // 퍽/쿵! — 몬스터 or 보스 타격
+                        if (gs.bossActive) {
+                            playBossHit();
+                        } else {
+                            playHitEnemy();
+                        }
+                    },
+                    () => playStompEnemy(),  // 푹! — 밟기
+                    () => playPlayerHurt(),  // 으악! — 플레이어 피격
+                    isMegaSwing ? 700 : 500, // swingDuration 추가
                 );
                 gs.entities = monsterResult.entities;
                 gs.lastBlockHitSwingTime = monsterResult.lastBlockHitSwingTime;
@@ -350,12 +378,21 @@ export const GameCanvas: React.FC = () => {
                     );
                     // Boss-player collision
                     if (aabbOverlap(p, boss, BOSS.HITBOX_RATIO)) {
-                        if (actions.takeDamage(1)) p.pos.x -= PLAYER.KNOCKBACK_DISTANCE * 2;
+                        if (actions.takeDamage(1)) {
+                            p.pos.x -= PLAYER.KNOCKBACK_DISTANCE * 2;
+                            playPlayerHurt(); // 으악! — 보스에 직접 충돌
+                        }
                     }
                 }
 
                 // Bullet collisions
-                const bulletResult = updateBullets(gs.bullets, gs.entities, p, (amt) => actions.takeDamage(amt), gs.cameraX, gs.effects, onBossHit);
+                const bulletResult = updateBullets(
+                    gs.bullets, gs.entities, p,
+                    (amt) => actions.takeDamage(amt),
+                    gs.cameraX, gs.effects, onBossHit,
+                    () => playHitEnemy(),    // 퍽! — 총알이 적 타격
+                    () => playPlayerHurt(), // 으악! — 보스 불에 피격
+                );
                 gs.entities = bulletResult.entities;
                 gs.bullets = bulletResult.bullets;
 
@@ -382,6 +419,7 @@ export const GameCanvas: React.FC = () => {
                         actions.activatePowerup(itemResult.collected as 'bigBullet' | 'fastRun', ITEMS.POWERUP_DURATION_MS);
                     }
                     actions.addScore(SCORE.ITEM_COLLECT);
+                    playItemCollect(); // 딩동! — 아이템 획득
                 }
 
                 // Effects update
@@ -498,7 +536,12 @@ export const GameCanvas: React.FC = () => {
 
     return (
         <div className="game-container">
-            <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="rounded-xl shadow-2xl border-4 border-white/20 bg-sky-200" />
+            <canvas
+                ref={canvasRef}
+                width={CANVAS_WIDTH}
+                height={CANVAS_HEIGHT}
+                className="game-canvas rounded-xl shadow-2xl border-4 border-white/20"
+            />
 
             {/* Top-Left Status Bar (HUD) */}
             <div className="hud-container">

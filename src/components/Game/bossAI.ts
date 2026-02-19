@@ -96,20 +96,26 @@ export function updateBoss(
         boss.pos.x <= arenaLeft ||
         boss.pos.x >= arenaRight
     ) {
-        // Decide next move pattern
-        const pattern = Math.random();
-        if (pattern < 0.35) {
-            // Chase player
-            tactics.moveDir = player.pos.x < boss.pos.x ? -1 : 1;
-            tactics.dirChangeCooldown = 800 + Math.random() * 800;
-        } else if (pattern < 0.65) {
-            // Retreat away from player
-            tactics.moveDir = player.pos.x < boss.pos.x ? 1 : -1;
-            tactics.dirChangeCooldown = 600 + Math.random() * 600;
+        if (boss.pos.x <= arenaLeft) {
+            tactics.moveDir = 1;
+        } else if (boss.pos.x >= arenaRight) {
+            tactics.moveDir = -1;
         } else {
-            // Random direction
-            tactics.moveDir = Math.random() < 0.5 ? -1 : 1;
-            tactics.dirChangeCooldown = 1000 + Math.random() * 2000;
+            // Decide next move pattern
+            const pattern = Math.random();
+            if (pattern < 0.35) {
+                // Chase player
+                tactics.moveDir = player.pos.x < boss.pos.x ? -1 : 1;
+                tactics.dirChangeCooldown = 800 + Math.random() * 800;
+            } else if (pattern < 0.65) {
+                // Retreat away from player
+                tactics.moveDir = player.pos.x < boss.pos.x ? 1 : -1;
+                tactics.dirChangeCooldown = 600 + Math.random() * 600;
+            } else {
+                // Random direction
+                tactics.moveDir = Math.random() < 0.5 ? -1 : 1;
+                tactics.dirChangeCooldown = 1000 + Math.random() * 2000;
+            }
         }
 
         // New: Occasionally enter retreat mode

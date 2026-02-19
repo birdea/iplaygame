@@ -344,24 +344,27 @@ export function drawPlayer(
     const megaElapsed = time - lastMegaSwingTime;
     const isMegaSwinging = megaElapsed < 600;
 
+    const halfW = p.width / 2;
+    const halfH = p.height / 2;
+
     ctx.save();
-    ctx.translate(pos.x + 25, pos.y);
+    ctx.translate(pos.x + halfW, pos.y);
     if (p.facing === 'left') {
         ctx.scale(-1, 1);
     }
-    ctx.translate(-25, 0);
+    ctx.translate(-halfW, 0);
 
     // Draw Charging Aura
     if (aCharged) {
         ctx.save();
-        ctx.translate(25, 40);
+        ctx.translate(halfW, halfH);
         ctx.rotate(time / 200);
 
         // Outer pulsing glow
         ctx.beginPath();
         const pulse = Math.sin(time / 100) * 10;
-        ctx.arc(0, 0, 55 + pulse, 0, Math.PI * 2);
-        const grad = ctx.createRadialGradient(0, 0, 30, 0, 0, 60 + pulse);
+        ctx.arc(0, 0, (halfW + 30) + pulse, 0, Math.PI * 2);
+        const grad = ctx.createRadialGradient(0, 0, halfW + 5, 0, 0, (halfW + 35) + pulse);
         grad.addColorStop(0, 'rgba(255, 215, 0, 0)');
         grad.addColorStop(0.5, 'rgba(255, 215, 0, 0.3)');
         grad.addColorStop(1, 'rgba(255, 215, 0, 0)');
@@ -374,8 +377,8 @@ export function drawPlayer(
         for (let r = 0; r < 8; r++) {
             ctx.rotate(Math.PI / 4);
             ctx.beginPath();
-            ctx.moveTo(35 + pulse, 0);
-            ctx.lineTo(55 + pulse, 0);
+            ctx.moveTo((halfW + 10) + pulse, 0);
+            ctx.lineTo((halfW + 30) + pulse, 0);
             ctx.stroke();
         }
         ctx.restore();
@@ -385,8 +388,8 @@ export function drawPlayer(
     if (isShieldActive) {
         ctx.save();
         ctx.beginPath();
-        ctx.arc(25, 40, 60, 0, Math.PI * 2);
-        const grad = ctx.createRadialGradient(25, 40, 40, 25, 40, 65);
+        ctx.arc(halfW, halfH, halfH * 1.5, 0, Math.PI * 2);
+        const grad = ctx.createRadialGradient(halfW, halfH, halfH, halfW, halfH, halfH * 1.625);
         grad.addColorStop(0, 'rgba(33, 150, 243, 0)');
         grad.addColorStop(1, 'rgba(33, 150, 243, 0.4)');
         ctx.fillStyle = grad;
@@ -404,31 +407,36 @@ export function drawPlayer(
 
     // Legs
     ctx.strokeStyle = '#333';
-    ctx.lineWidth = 10;
+    ctx.lineWidth = Math.max(2, p.width * 0.2);
     ctx.lineCap = 'round';
 
+    const legY = p.height * 0.75;
+    const legLen = p.height * 0.25;
+    const legX1 = p.width * 0.3;
+    const legX2 = p.width * 0.7;
+
     ctx.save();
-    ctx.translate(15, 60);
+    ctx.translate(legX1, legY);
     ctx.rotate(walkCycle * 0.5);
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 20); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, legLen); ctx.stroke();
     ctx.restore();
 
     ctx.save();
-    ctx.translate(35, 60);
+    ctx.translate(legX2, legY);
     ctx.rotate(-walkCycle * 0.5);
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 20); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, legLen); ctx.stroke();
     ctx.restore();
 
     // Body
     ctx.fillStyle = bodyColor;
-    ctx.fillRect(0, 30, 50, 40);
+    ctx.fillRect(0, p.height * 0.375, p.width, p.height * 0.5);
 
     // Left arm (normal walk swing)
-    ctx.lineWidth = 8;
+    ctx.lineWidth = Math.max(2, p.width * 0.16);
     ctx.save();
-    ctx.translate(5, 40);
+    ctx.translate(p.width * 0.1, p.height * 0.5);
     ctx.rotate(armCycle * 0.5);
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-15, 15); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-p.width * 0.3, p.width * 0.3); ctx.stroke();
     ctx.restore();
 
     // Right arm + Weapon (sword or flail/club)
@@ -443,59 +451,121 @@ export function drawPlayer(
         const progress = Math.min(1.0, elapsed_sw / duration);
 
 
+        const isFlipped = p.facing === 'left';
         // Attack direction → angle
         let dirAngle = 0;
         if (attackDir === 'up') dirAngle = -Math.PI / 2;
         else if (attackDir === 'down') dirAngle = Math.PI / 2;
-        else if (attackDir === 'left') dirAngle = Math.PI;
-        else dirAngle = 0; // right
+        else if (attackDir === 'left') dirAngle = isFlipped ? 0 : Math.PI;
+        else dirAngle = isFlipped ? Math.PI : 0; // right
 
         if (isMegaSwinging) {
-            // ── MEGA CHARGE: 360° spin + thrust combo ──
+            // -- MEGA CHARGE: 2단계 -- [0~0.55] 360° 2회전 스핀 → [0.55~1.0] 길게 찌르기 --
             ctx.save();
-            ctx.translate(25, 40);
+            ctx.translate(halfW, halfH);
 
-            const spinAngle = progress * Math.PI * 4; // 2 full rotations
-            // Thrust extend during spin (0→85→0)
-            const thrustOffset = Math.sin(progress * Math.PI * 2) * 30;
+            if (progress < 0.55) {
+                // -- Phase 1: 스핀 (2회전) --
+                const spinProgress = progress / 0.55;
+                const spinAngle = spinProgress * Math.PI * 4; // 2회전
+                const thrustOffset = Math.sin(spinProgress * Math.PI * 2) * 28;
 
-            // Trailing arcs
-            if (progress > 0.12) {
-                const trailCount = 5;
-                const sweepAngle = Math.min(Math.PI * 2, progress * Math.PI * 7);
-                for (let t = 0; t < trailCount; t++) {
-                    const alpha = (1 - t / trailCount) * Math.max(0, 1.3 - progress * 1.6);
-                    if (alpha <= 0) continue;
+                // 트레일 아크
+                if (spinProgress > 0.1) {
+                    const trailCount = 5;
+                    const sweepAngle = Math.min(Math.PI * 2, spinProgress * Math.PI * 7);
+                    for (let tIdx = 0; tIdx < trailCount; tIdx++) {
+                        const alpha = (1 - tIdx / trailCount) * Math.max(0, 1.4 - spinProgress * 1.8);
+                        if (alpha <= 0) continue;
+                        ctx.save();
+                        ctx.globalAlpha = alpha * 0.75;
+                        const trailRad = 132 + thrustOffset + tIdx * 8;
+                        ctx.strokeStyle = tIdx % 2 === 0 ? '#FF6B35' : '#FFFFFF';
+                        ctx.lineWidth = 9 - tIdx;
+                        ctx.lineCap = 'round';
+                        ctx.beginPath();
+                        ctx.arc(0, 0, trailRad, spinAngle - sweepAngle, spinAngle);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                    ctx.globalAlpha = 1;
+                    // 충격파 링
+                    if (spinProgress > 0.3 && spinProgress < 0.85) {
+                        const burstA = Math.sin((spinProgress - 0.3) / 0.55 * Math.PI);
+                        ctx.save();
+                        ctx.globalAlpha = burstA * 0.45;
+                        ctx.strokeStyle = '#FF8C42';
+                        ctx.lineWidth = 4;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, 140 + thrustOffset, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.restore();
+                        ctx.globalAlpha = 1;
+                    }
+                }
+                ctx.rotate(spinAngle);
+                ctx.translate(thrustOffset, 0);
+                drawDragonSlayer(ctx, 144, true, spinProgress, isBigBullet);
+
+            } else {
+                // -- Phase 2: 길게 찌르기 (thrust) 후 회수 --
+                const thrustProgress = (progress - 0.55) / 0.45;
+                let thrustDist = 0;
+                if (thrustProgress < 0.35) {
+                    // 빠른 찌르기: easeOut cubic
+                    const t2 = thrustProgress / 0.35;
+                    thrustDist = (1 - Math.pow(1 - t2, 3)) * 130;
+                } else if (thrustProgress < 0.6) {
+                    // 유지
+                    thrustDist = 130;
+                } else {
+                    // 회수: easeIn
+                    const t2 = (thrustProgress - 0.6) / 0.4;
+                    thrustDist = 130 * (1 - Math.pow(t2, 2));
+                }
+
+                // 찌르기 방향으로 이동
+                ctx.rotate(dirAngle);
+                ctx.translate(thrustDist, 0);
+
+                // 찌르기 속도감 트레일
+                if (thrustDist > 15) {
+                    const ta = Math.min(thrustProgress / 0.35, 1)
+                        * (1 - Math.max(0, (thrustProgress - 0.6) / 0.4)) * 0.7;
                     ctx.save();
-                    ctx.globalAlpha = alpha * 0.75;
-                    const trailRad = 110 + thrustOffset + t * 8;
-                    ctx.strokeStyle = t % 2 === 0 ? '#FF6B35' : '#FFFFFF';
-                    ctx.lineWidth = 9 - t;
+                    ctx.globalAlpha = ta;
+                    ctx.strokeStyle = '#FFD580';
+                    ctx.lineWidth = 8;
                     ctx.lineCap = 'round';
                     ctx.beginPath();
-                    ctx.arc(0, 0, trailRad, spinAngle - sweepAngle, spinAngle);
+                    ctx.moveTo(-thrustDist * 0.65, -7);
+                    ctx.lineTo(-12, -7);
                     ctx.stroke();
-                    ctx.restore();
-                }
-                ctx.globalAlpha = 1;
-                // Shockwave ring
-                if (progress > 0.3 && progress < 0.75) {
-                    const burstA = Math.sin((progress - 0.3) / 0.45 * Math.PI);
-                    ctx.save();
-                    ctx.globalAlpha = burstA * 0.45;
-                    ctx.strokeStyle = '#FF8C42';
-                    ctx.lineWidth = 4;
                     ctx.beginPath();
-                    ctx.arc(0, 0, 120 + thrustOffset, 0, Math.PI * 2);
+                    ctx.moveTo(-thrustDist * 0.65, 7);
+                    ctx.lineTo(-12, 7);
                     ctx.stroke();
                     ctx.restore();
                     ctx.globalAlpha = 1;
                 }
+                // 피크 임팩트 플래시
+                if (thrustProgress > 0.3 && thrustProgress < 0.62) {
+                    const flashA = Math.sin((thrustProgress - 0.3) / 0.32 * Math.PI);
+                    ctx.save();
+                    ctx.globalAlpha = flashA * 0.7;
+                    ctx.fillStyle = '#FFDD00';
+                    ctx.shadowColor = '#FFA000';
+                    ctx.shadowBlur = 22;
+                    ctx.beginPath();
+                    ctx.arc(140, 0, 24, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                    ctx.globalAlpha = 1;
+                }
+
+                drawDragonSlayer(ctx, 144, true, progress, isBigBullet);
             }
-            // translate outward by thrustOffset along spin direction
-            ctx.rotate(spinAngle);
-            ctx.translate(thrustOffset, 0);
-            drawDragonSlayer(ctx, 120, true, progress, isBigBullet);
+
             ctx.restore();
 
         } else if (isSwinging) {
@@ -504,7 +574,7 @@ export function drawPlayer(
             // Phase 0.30-0.55: shake up/down violently
             // Phase 0.55-1.00: retract back
             ctx.save();
-            ctx.translate(25, 40); // shoulder
+            ctx.translate(halfW, halfH); // shoulder
 
             let thrustDist = 0;   // how far forward blade extends
             let shakeY = 0;       // vertical shake offset
@@ -564,17 +634,17 @@ export function drawPlayer(
             const perpY = Math.cos(dirAngle) * shakeY;
             ctx.rotate(dirAngle);
             ctx.translate(thrustDist + perpX, perpY);
-            drawDragonSlayer(ctx, 110, false, progress, isBigBullet);
+            drawDragonSlayer(ctx, 132, false, progress, isBigBullet); // 110 * 1.2 = 132
             ctx.restore();
 
         } else {
             // ── IDLE: Dragon Slayer dragged/held diagonally on back ──
             ctx.save();
-            ctx.translate(25, 40);
+            ctx.translate(halfW, halfH);
             // Held at ~-70° (up-right) with subtle breathing bob
             const idleAngle = -Math.PI * 0.38 + Math.sin(time / 800) * 0.05;
             ctx.rotate(idleAngle);
-            drawDragonSlayer(ctx, 110, false, 0, isBigBullet);
+            drawDragonSlayer(ctx, 132, false, 0, isBigBullet); // 110 * 1.2 = 132
             ctx.restore();
         }
 
@@ -733,7 +803,7 @@ export function drawPlayer(
         else if (attackDir === 'right') baseAngle = isFlipped ? Math.PI : 0;
 
         // Body center-ish shoulder
-        ctx.translate(25, 40);
+        ctx.translate(halfW, halfH);
         ctx.rotate(baseAngle);
 
         const normalDuration = 500;
@@ -777,7 +847,7 @@ export function drawPlayer(
         if (isSpinning) {
             ctx.restore(); // Back to player local space to spin around center
             ctx.save();
-            ctx.translate(25, 40); // Rotate around body center
+            ctx.translate(halfW, halfH); // Rotate around body center
             ctx.rotate(spinAngle);
 
             // Draw spinning chain and ball
@@ -872,30 +942,33 @@ export function drawPlayer(
     // Head
     if (faceImg) {
         ctx.save();
-        ctx.beginPath(); ctx.arc(25, 25, 25, 0, Math.PI * 2); ctx.clip();
-        ctx.drawImage(faceImg, 0, 0, 50, 50);
+        ctx.beginPath(); ctx.arc(halfW, halfW, halfW, 0, Math.PI * 2); ctx.clip();
+        ctx.drawImage(faceImg, 0, 0, p.width, p.width);
         ctx.restore();
         ctx.strokeStyle = '#FFCCBC';
         ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(25, 25, 25, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(halfW, halfW, halfW, 0, Math.PI * 2); ctx.stroke();
     } else {
         // Plain face: skin color
         ctx.fillStyle = '#FFCCBC';
-        ctx.beginPath(); ctx.arc(25, 25, 25, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(halfW, halfW, halfW, 0, Math.PI * 2); ctx.fill();
 
         // Black eyes – indicate facing direction
-        const eyeOffsetX = p.facing === 'left' ? -7 : 7;
+        const eyeOffsetX = p.facing === 'left' ? -halfW * 0.28 : halfW * 0.28;
         // Both eyes, shifted toward facing side
         ctx.fillStyle = '#1a1a1a';
-        // Left eye (circle r=4)
-        ctx.beginPath(); ctx.arc(25 + eyeOffsetX - 5, 20, 4, 0, Math.PI * 2); ctx.fill();
-        // Right eye (circle r=4)
-        ctx.beginPath(); ctx.arc(25 + eyeOffsetX + 5, 20, 4, 0, Math.PI * 2); ctx.fill();
-        // Pupils (pointing toward facing, circle r=1.8)
+        const eyeRadius = halfW * 0.16;
+        const eyeSpacing = halfW * 0.2;
+        // Left eye
+        ctx.beginPath(); ctx.arc(halfW + eyeOffsetX - eyeSpacing, halfW * 0.8, eyeRadius, 0, Math.PI * 2); ctx.fill();
+        // Right eye
+        ctx.beginPath(); ctx.arc(halfW + eyeOffsetX + eyeSpacing, halfW * 0.8, eyeRadius, 0, Math.PI * 2); ctx.fill();
+        // Pupils (pointing toward facing)
         ctx.fillStyle = '#FFFFFF';
-        const pupilShift = p.facing === 'left' ? -2 : 2;
-        ctx.beginPath(); ctx.arc(25 + eyeOffsetX - 5 + pupilShift, 19, 1.8, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(25 + eyeOffsetX + 5 + pupilShift, 19, 1.8, 0, Math.PI * 2); ctx.fill();
+        const pupilShift = p.facing === 'left' ? -halfW * 0.08 : halfW * 0.08;
+        const pupilRadius = eyeRadius * 0.45;
+        ctx.beginPath(); ctx.arc(halfW + eyeOffsetX - eyeSpacing + pupilShift, halfW * 0.76, pupilRadius, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(halfW + eyeOffsetX + eyeSpacing + pupilShift, halfW * 0.76, pupilRadius, 0, Math.PI * 2); ctx.fill();
     }
 
     ctx.restore();
@@ -910,7 +983,12 @@ export function drawMonster(
     faceImg: HTMLImageElement | null,
 ): void {
     ctx.save();
-    ctx.translate(e.pos.x, e.pos.y);
+    // 중심점 기준으로 scale(-1, 1) 적용 후 다시 복제
+    ctx.translate(e.pos.x + e.width / 2, e.pos.y + e.height / 2);
+    if (e.vel.x > 0) {
+        ctx.scale(-1, 1);
+    }
+    ctx.translate(-e.width / 2, -e.height / 2);
 
     // SMB3 Outline
     ctx.shadowColor = 'black';
