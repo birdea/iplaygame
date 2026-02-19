@@ -20,28 +20,19 @@ export const Menu: React.FC = () => {
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
-        // logo1 → logo2 → video 순서로 자동 전환
         const runPhase = (index: number) => {
             const current = INTRO_PHASES[index];
             if (!current) return;
-
             setIntroPhase(current.phase);
-
             if (current.duration !== Infinity) {
-                timerRef.current = setTimeout(() => {
-                    runPhase(index + 1);
-                }, current.duration);
+                timerRef.current = setTimeout(() => runPhase(index + 1), current.duration);
             }
         };
-
         runPhase(0);
-
-        return () => {
-            if (timerRef.current) clearTimeout(timerRef.current);
-        };
+        return () => { if (timerRef.current) clearTimeout(timerRef.current); };
     }, []);
 
-    // video 페이즈 진입 시 재생
+    // video 페이즈 진입 시 자동 재생
     useEffect(() => {
         if (introPhase === 'video' && videoRef.current) {
             videoRef.current.play().catch(() => { });
@@ -49,18 +40,49 @@ export const Menu: React.FC = () => {
     }, [introPhase]);
 
     return (
-        <div className="h-full flex flex-col items-center justify-center gap-6 p-4">
+        <div style={{
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '1.5rem',
+            padding: '1rem',
+        }}>
+            {/* 타이틀 */}
             <motion.h1
                 initial={{ y: -50, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
-                className="text-4xl md:text-6xl font-extrabold text-white drop-shadow-lg tracking-tighter text-center"
+                style={{
+                    fontSize: 'clamp(2rem, 8vw, 3.5rem)',
+                    fontWeight: 900,
+                    color: 'white',
+                    textShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                    letterSpacing: '-0.03em',
+                    textAlign: 'center',
+                    margin: 0,
+                }}
             >
                 {GAME_STRATEGY.GENERAL.TITLE.split(' ')[0]}{' '}
-                <span className="text-primary">{GAME_STRATEGY.GENERAL.TITLE.split(' ')[1]}</span>
+                <span style={{ color: 'var(--primary)' }}>{GAME_STRATEGY.GENERAL.TITLE.split(' ')[1]}</span>
             </motion.h1>
 
-            {/* 인트로 이미지/비디오 시퀀스 */}
-            <div className="relative w-48 h-48 md:w-64 md:h-64 rounded-3xl overflow-hidden shadow-2xl border-4 border-white/20">
+            {/* 인트로 이미지/비디오 시퀀스 컨테이너 */}
+            <motion.div
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.2, type: 'spring', stiffness: 260, damping: 20 }}
+                style={{
+                    position: 'relative',
+                    width: 'clamp(200px, 40vw, 280px)',
+                    height: 'clamp(200px, 40vw, 280px)',
+                    borderRadius: '24px',
+                    overflow: 'hidden',
+                    boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
+                    border: '3px solid rgba(255,255,255,0.2)',
+                    flexShrink: 0,
+                }}
+            >
                 <AnimatePresence mode="wait">
                     {/* Phase 1: main_logo.jpg */}
                     {introPhase === 'logo1' && (
@@ -68,11 +90,17 @@ export const Menu: React.FC = () => {
                             key="logo1"
                             src="/logo/main_logo.jpg"
                             alt="Main Logo"
-                            className="absolute inset-0 w-full h-full object-cover"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             transition={{ duration: 0.5 }}
+                            style={{
+                                position: 'absolute',
+                                inset: 0,
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover',
+                            }}
                         />
                     )}
 
@@ -82,45 +110,52 @@ export const Menu: React.FC = () => {
                             key="logo2"
                             src="/logo/main_logo_dragon_knight_img.jpg"
                             alt="Dragon Knight"
-                            className="absolute inset-0 w-full h-full object-cover"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             transition={{ duration: 0.5 }}
+                            style={{
+                                position: 'absolute',
+                                inset: 0,
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover',
+                            }}
                         />
                     )}
 
-                    {/* Phase 3: main_logo_dragon_knight_intro.mp4 (루프) */}
+                    {/* Phase 3: main_logo_dragon_knight_intro.mp4 (무한 루프) */}
                     {introPhase === 'video' && (
                         <motion.div
                             key="video"
-                            className="absolute inset-0"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             transition={{ duration: 0.5 }}
+                            style={{ position: 'absolute', inset: 0 }}
                         >
                             <video
                                 ref={videoRef}
                                 src="/logo/main_logo_dragon_knight_intro.mp4"
+                                autoPlay
                                 loop
                                 muted
                                 playsInline
-                                className="w-full h-full object-cover"
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                             />
                         </motion.div>
                     )}
                 </AnimatePresence>
-            </div>
+            </motion.div>
 
-            <div className="flex flex-col gap-4 w-full max-w-[250px]">
+            {/* 버튼 영역 */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', maxWidth: '250px' }}>
                 <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={() => {
-                        useGameStore.getState().resetGame();
-                    }}
-                    className="btn-primary flex items-center justify-center gap-2 text-lg md:text-xl w-full"
+                    onClick={() => { useGameStore.getState().resetGame(); }}
+                    className="btn-primary"
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '1.1rem', width: '100%' }}
                 >
                     <Play fill="white" size={24} /> PLAY
                 </motion.button>
@@ -129,7 +164,8 @@ export const Menu: React.FC = () => {
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setScreen('settings')}
-                    className="btn-secondary flex items-center justify-center gap-2 text-lg md:text-xl w-full"
+                    className="btn-secondary"
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '1.1rem', width: '100%' }}
                 >
                     <SettingsIcon size={24} /> SETTINGS
                 </motion.button>
