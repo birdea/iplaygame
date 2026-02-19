@@ -112,9 +112,9 @@ export const GAME_STRATEGY = {
         /** Horizontal movement speed: (2 + stage * 0.5) */
         BASE_SPEED: 2,
         SPEED_STAGE_SCALING: 0.5,
-        /** Boss movement arena bounds relative to screen edges */
-        ARENA_INSET_LEFT: 250,
-        ARENA_INSET_RIGHT: 50, // 1000 - 950
+        /** Boss movement arena bounds relative to screen edges (0 = full screen) */
+        ARENA_INSET_LEFT: 0,
+        ARENA_INSET_RIGHT: 0,
         /** Fire attack cooldown: 3500 / stage (ms) */
         FIRE_COOLDOWN_BASE_MS: 3500,
         /** Number of bullets in a fire wave: 6 * (1.2 ^ stage-1) */
@@ -129,9 +129,9 @@ export const GAME_STRATEGY = {
         /** Interval for infinite platform spawning during boss fight (ms) */
         PLATFORM_SPAWN_INTERVAL_MS: 3000,
         /** Boss heads home/retreats to the right for this duration (ms) */
-        RETREAT_DURATION_MS: 5000,
+        RETREAT_DURATION_MS: 1500,
         /** Chance to enter retreat mode per direction check */
-        RETREAT_CHANCE: 0.15,
+        RETREAT_CHANCE: 0.05,
         /** Limbs configuration */
         LIMBS: {
             ARMS_BASE: 2,
@@ -186,7 +186,7 @@ export const GAME_STRATEGY = {
         /** Chance for a hole/gap to appear in the ground (Reduced for higher frequency) */
         GROUND_HOLE_CHANCE: 0.06,
         /** Chance for a question block instead of brick */
-        QUESTION_BLOCK_CHANCE: 0.15, // 1.0 - 0.85
+        QUESTION_BLOCK_CHANCE: 0.25,
 
         PLATFORMS: {
             /** Chance to skip a section on a floor to create a gap (Reduced for higher frequency) */

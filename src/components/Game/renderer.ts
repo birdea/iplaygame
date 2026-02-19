@@ -451,51 +451,112 @@ export function drawPlayer(
         else dirAngle = 0; // right
 
         if (isMegaSwinging) {
-            // ── MEGA CHARGE: 360° spin + thrust combo ──
+            // -- MEGA CHARGE: 2단계 -- [0~0.55] 360° 2회전 스핀 → [0.55~1.0] 길게 찌르기 --
             ctx.save();
             ctx.translate(25, 40);
 
-            const spinAngle = progress * Math.PI * 4; // 2 full rotations
-            // Thrust extend during spin (0→85→0)
-            const thrustOffset = Math.sin(progress * Math.PI * 2) * 30;
+            if (progress < 0.55) {
+                // -- Phase 1: 스핀 (2회전) --
+                const spinProgress = progress / 0.55;
+                const spinAngle = spinProgress * Math.PI * 4; // 2회전
+                const thrustOffset = Math.sin(spinProgress * Math.PI * 2) * 28;
 
-            // Trailing arcs
-            if (progress > 0.12) {
-                const trailCount = 5;
-                const sweepAngle = Math.min(Math.PI * 2, progress * Math.PI * 7);
-                for (let t = 0; t < trailCount; t++) {
-                    const alpha = (1 - t / trailCount) * Math.max(0, 1.3 - progress * 1.6);
-                    if (alpha <= 0) continue;
+                // 트레일 아크
+                if (spinProgress > 0.1) {
+                    const trailCount = 5;
+                    const sweepAngle = Math.min(Math.PI * 2, spinProgress * Math.PI * 7);
+                    for (let tIdx = 0; tIdx < trailCount; tIdx++) {
+                        const alpha = (1 - tIdx / trailCount) * Math.max(0, 1.4 - spinProgress * 1.8);
+                        if (alpha <= 0) continue;
+                        ctx.save();
+                        ctx.globalAlpha = alpha * 0.75;
+                        const trailRad = 132 + thrustOffset + tIdx * 8;
+                        ctx.strokeStyle = tIdx % 2 === 0 ? '#FF6B35' : '#FFFFFF';
+                        ctx.lineWidth = 9 - tIdx;
+                        ctx.lineCap = 'round';
+                        ctx.beginPath();
+                        ctx.arc(0, 0, trailRad, spinAngle - sweepAngle, spinAngle);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                    ctx.globalAlpha = 1;
+                    // 충격파 링
+                    if (spinProgress > 0.3 && spinProgress < 0.85) {
+                        const burstA = Math.sin((spinProgress - 0.3) / 0.55 * Math.PI);
+                        ctx.save();
+                        ctx.globalAlpha = burstA * 0.45;
+                        ctx.strokeStyle = '#FF8C42';
+                        ctx.lineWidth = 4;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, 140 + thrustOffset, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.restore();
+                        ctx.globalAlpha = 1;
+                    }
+                }
+                ctx.rotate(spinAngle);
+                ctx.translate(thrustOffset, 0);
+                drawDragonSlayer(ctx, 144, true, spinProgress, isBigBullet);
+
+            } else {
+                // -- Phase 2: 길게 찌르기 (thrust) 후 회수 --
+                const thrustProgress = (progress - 0.55) / 0.45;
+                let thrustDist = 0;
+                if (thrustProgress < 0.35) {
+                    // 빠른 찌르기: easeOut cubic
+                    const t2 = thrustProgress / 0.35;
+                    thrustDist = (1 - Math.pow(1 - t2, 3)) * 130;
+                } else if (thrustProgress < 0.6) {
+                    // 유지
+                    thrustDist = 130;
+                } else {
+                    // 회수: easeIn
+                    const t2 = (thrustProgress - 0.6) / 0.4;
+                    thrustDist = 130 * (1 - Math.pow(t2, 2));
+                }
+
+                // 찌르기 방향으로 이동
+                ctx.rotate(dirAngle);
+                ctx.translate(thrustDist, 0);
+
+                // 찌르기 속도감 트레일
+                if (thrustDist > 15) {
+                    const ta = Math.min(thrustProgress / 0.35, 1)
+                        * (1 - Math.max(0, (thrustProgress - 0.6) / 0.4)) * 0.7;
                     ctx.save();
-                    ctx.globalAlpha = alpha * 0.75;
-                    const trailRad = 110 + thrustOffset + t * 8;
-                    ctx.strokeStyle = t % 2 === 0 ? '#FF6B35' : '#FFFFFF';
-                    ctx.lineWidth = 9 - t;
+                    ctx.globalAlpha = ta;
+                    ctx.strokeStyle = '#FFD580';
+                    ctx.lineWidth = 8;
                     ctx.lineCap = 'round';
                     ctx.beginPath();
-                    ctx.arc(0, 0, trailRad, spinAngle - sweepAngle, spinAngle);
+                    ctx.moveTo(-thrustDist * 0.65, -7);
+                    ctx.lineTo(-12, -7);
                     ctx.stroke();
-                    ctx.restore();
-                }
-                ctx.globalAlpha = 1;
-                // Shockwave ring
-                if (progress > 0.3 && progress < 0.75) {
-                    const burstA = Math.sin((progress - 0.3) / 0.45 * Math.PI);
-                    ctx.save();
-                    ctx.globalAlpha = burstA * 0.45;
-                    ctx.strokeStyle = '#FF8C42';
-                    ctx.lineWidth = 4;
                     ctx.beginPath();
-                    ctx.arc(0, 0, 120 + thrustOffset, 0, Math.PI * 2);
+                    ctx.moveTo(-thrustDist * 0.65, 7);
+                    ctx.lineTo(-12, 7);
                     ctx.stroke();
                     ctx.restore();
                     ctx.globalAlpha = 1;
                 }
+                // 피크 임팩트 플래시
+                if (thrustProgress > 0.3 && thrustProgress < 0.62) {
+                    const flashA = Math.sin((thrustProgress - 0.3) / 0.32 * Math.PI);
+                    ctx.save();
+                    ctx.globalAlpha = flashA * 0.7;
+                    ctx.fillStyle = '#FFDD00';
+                    ctx.shadowColor = '#FFA000';
+                    ctx.shadowBlur = 22;
+                    ctx.beginPath();
+                    ctx.arc(140, 0, 24, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                    ctx.globalAlpha = 1;
+                }
+
+                drawDragonSlayer(ctx, 144, true, progress, isBigBullet);
             }
-            // translate outward by thrustOffset along spin direction
-            ctx.rotate(spinAngle);
-            ctx.translate(thrustOffset, 0);
-            drawDragonSlayer(ctx, 120, true, progress, isBigBullet);
+
             ctx.restore();
 
         } else if (isSwinging) {
@@ -564,7 +625,7 @@ export function drawPlayer(
             const perpY = Math.cos(dirAngle) * shakeY;
             ctx.rotate(dirAngle);
             ctx.translate(thrustDist + perpX, perpY);
-            drawDragonSlayer(ctx, 110, false, progress, isBigBullet);
+            drawDragonSlayer(ctx, 132, false, progress, isBigBullet); // 110 * 1.2 = 132
             ctx.restore();
 
         } else {
@@ -574,7 +635,7 @@ export function drawPlayer(
             // Held at ~-70° (up-right) with subtle breathing bob
             const idleAngle = -Math.PI * 0.38 + Math.sin(time / 800) * 0.05;
             ctx.rotate(idleAngle);
-            drawDragonSlayer(ctx, 110, false, 0, isBigBullet);
+            drawDragonSlayer(ctx, 132, false, 0, isBigBullet); // 110 * 1.2 = 132
             ctx.restore();
         }
 
@@ -910,7 +971,12 @@ export function drawMonster(
     faceImg: HTMLImageElement | null,
 ): void {
     ctx.save();
-    ctx.translate(e.pos.x, e.pos.y);
+    // 중심점 기준으로 scale(-1, 1) 적용 후 다시 복제
+    ctx.translate(e.pos.x + e.width / 2, e.pos.y + e.height / 2);
+    if (e.vel.x > 0) {
+        ctx.scale(-1, 1);
+    }
+    ctx.translate(-e.width / 2, -e.height / 2);
 
     // SMB3 Outline
     ctx.shadowColor = 'black';
