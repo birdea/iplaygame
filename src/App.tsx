@@ -5,6 +5,10 @@ import { Settings } from './components/UI/Settings';
 import { GameCanvas } from './components/Game/GameCanvas';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
+import { GAME_STRATEGY } from './components/Game/GameStrategy';
+
+const { UI } = GAME_STRATEGY;
+
 
 const VictoryView: React.FC = () => {
   const { stage, nextStage, setScreen } = useGameStore();
@@ -38,24 +42,25 @@ const VictoryView: React.FC = () => {
       animate={{ opacity: 1 }}
       className="w-full h-full flex flex-col items-center justify-center gap-6 md:gap-8 bg-black/80"
     >
-      <h2 className="responsive-header font-black text-accent">VICTORY!</h2>
-      <p className="text-xl md:text-2xl text-white/80">Stage {stage} Cleared!</p>
-      {stage < 3 ? (
+      <h2 className="responsive-header font-black text-accent">{UI.VICTORY_TITLE}</h2>
+      <p className="text-xl md:text-2xl text-white/80">{UI.STAGE_CLEAR_MESSAGE(stage)}</p>
+      {stage < GAME_STRATEGY.STAGE.TOTAL_STAGES ? (
         <button
           onClick={() => { nextStage(); setScreen('game'); }}
           className="btn-primary text-xl md:text-2xl px-8 md:px-12 py-4 md:py-6"
         >
-          NEXT STAGE
+          {UI.NEXT_STAGE_BUTTON}
         </button>
       ) : (
         <div className="flex flex-col items-center gap-4">
-          <p className="text-2xl md:text-4xl text-white">All Stages Conquered!</p>
+          <p className="text-2xl md:text-4xl text-white">{UI.ALL_CLEAR_MESSAGE}</p>
           <button onClick={() => setScreen('menu')} className="btn-primary">
-            MAIN MENU
+            {UI.MAIN_MENU_BUTTON}
           </button>
         </div>
       )}
     </motion.div>
+
   );
 };
 
@@ -150,15 +155,16 @@ const App: React.FC = () => {
               animate={{ opacity: 1 }}
               className="w-full h-full flex flex-col items-center justify-center gap-6 md:gap-8 bg-black/80"
             >
-              <h2 className="text-5xl md:text-8xl font-black text-primary">GAME OVER</h2>
+              <h2 className="text-5xl md:text-8xl font-black text-primary">{UI.GAME_OVER_TITLE}</h2>
               <button onClick={() => resetGame()} className="btn-primary text-xl md:text-2xl px-8 md:px-12 py-4 md:py-6">
-                RETRY
+                {UI.RETRY_BUTTON}
               </button>
               <button onClick={() => setScreen('menu')} className="btn-secondary">
-                MAIN MENU
+                {UI.MAIN_MENU_BUTTON}
               </button>
             </motion.div>
           )}
+
 
           {screen === 'victory' && (
             <VictoryView />

@@ -1,5 +1,5 @@
 import type { Entity, Block, Monster } from '../../types';
-import { UNIT_SIZE, STAGE_LENGTH, BOSS_TRIGGER_X } from '../../constants';
+import { UNIT_SIZE, getStageLength, getBossTriggerX } from '../../constants';
 
 let nextId = 0;
 
@@ -12,16 +12,21 @@ export function resetIds(): void {
     nextId = 0;
 }
 
-/** Ground Y position (px) */
-const GROUND_Y = 500;
+import { GAME_STRATEGY } from './GameStrategy';
+
+const { GROUND_Y } = GAME_STRATEGY.PHYSICS;
+const { STAGE, MONSTERS } = GAME_STRATEGY;
 
 /** Generate all ground blocks with random holes */
-function generateGround(): Block[] {
+function generateGround(stage: number): Block[] {
     const blocks: Block[] = [];
     let x = 0;
+    const stageLength = getStageLength(stage);
+    const bossTriggerX = getBossTriggerX(stage);
 
-    while (x < STAGE_LENGTH) {
-        if (x > 1000 && x < BOSS_TRIGGER_X - 500 && Math.random() < 0.12) {
+    while (x < stageLength) {
+        // Holes appear only in the playable middle area
+        if (x > 1000 && x < bossTriggerX - 500 && Math.random() < STAGE.GROUND_HOLE_CHANCE) {
             const holeSize = Math.floor(Math.random() * 2) + 1;
             x += holeSize * UNIT_SIZE;
             continue;
@@ -44,61 +49,56 @@ function generateGround(): Block[] {
 
 /**
  * Generate multi-floor platforms (2F / 3F / 4F) spread across the stage.
- * Each "section" randomly picks a floor height and places a run of blocks.
+ * Each floor is generated independently to allow for overlapping and complex layouts.
  */
-function generatePlatforms(): Block[] {
+function generatePlatforms(stage: number): Block[] {
     const platforms: Block[] = [];
+    const bossTriggerX = getBossTriggerX(stage);
+    const startX = 600;
+    const endX = bossTriggerX - 600;
 
-    // Floor Y positions (2F, 3F, 4F above ground)
-    const floorYMap: Record<number, number> = {
-        2: GROUND_Y - UNIT_SIZE * 2,   // 2nd floor: 100px above ground
-        3: GROUND_Y - UNIT_SIZE * 4,   // 3rd floor: 200px above ground
-        4: GROUND_Y - UNIT_SIZE * 6,   // 4th floor: 300px above ground
-    };
+    const floorYs = [
+        GROUND_Y - UNIT_SIZE * 2, // 2F
+        GROUND_Y - UNIT_SIZE * 4, // 3F
+        GROUND_Y - UNIT_SIZE * 6, // 4F
+    ];
 
-    // Walk through the stage in sections
-    let x = 600; // start after safe zone
-    const endX = BOSS_TRIGGER_X - 600;
+    floorYs.forEach((floorY, floorIdx) => {
+        // Stagger the horizontal start for each floor
+        let x = startX + (floorIdx * 200);
 
-    // Track which floors we've used recently to ensure variety
-    const recentFloors: number[] = [];
+        while (x < endX) {
+            // Random chance to create a longer gap between platforms on this floor
+            if (Math.random() < STAGE.PLATFORMS.FLOOR_GAP_CHANCE) {
+                x += UNIT_SIZE * (Math.floor(Math.random() * 4) + 2);
+                continue;
+            }
 
-    while (x < endX) {
-        // Pick a floor, biasing away from recently used ones
-        let floor: number;
-        const available = [2, 3, 4].filter(f => !recentFloors.slice(-2).includes(f));
-        if (available.length === 0) {
-            floor = [2, 3, 4][Math.floor(Math.random() * 3)];
-        } else {
-            floor = available[Math.floor(Math.random() * available.length)];
+            // Platform length and gap between platforms on the same floor
+            const platformLen = Math.floor(Math.random() * (STAGE.PLATFORMS.MAX_BLOCKS - STAGE.PLATFORMS.MIN_BLOCKS + 1)) + STAGE.PLATFORMS.MIN_BLOCKS;
+            const gap = Math.floor(Math.random() * (STAGE.PLATFORMS.MAX_GAP_UNITS - STAGE.PLATFORMS.MIN_GAP_UNITS + 1)) + STAGE.PLATFORMS.MIN_GAP_UNITS;
+
+            for (let i = 0; i < platformLen; i++) {
+                const bx = x + i * UNIT_SIZE;
+                if (bx >= endX) break;
+
+                // Randomly place question blocks
+                const blockType: 'brick' | 'question' = Math.random() < STAGE.QUESTION_BLOCK_CHANCE ? 'question' : 'brick';
+
+                platforms.push({
+                    id: getUniqueId(`platform-${floorIdx}`),
+                    pos: { x: bx, y: floorY },
+                    vel: { x: 0, y: 0 },
+                    width: UNIT_SIZE,
+                    height: UNIT_SIZE,
+                    type: 'block',
+                    blockType,
+                } as Block);
+            }
+
+            x += (platformLen + gap) * UNIT_SIZE;
         }
-        recentFloors.push(floor);
-        if (recentFloors.length > 4) recentFloors.shift();
-
-        const floorY = floorYMap[floor];
-
-        // Platform length: 2–6 blocks
-        const platformLen = Math.floor(Math.random() * 5) + 2;
-        // Gap before next platform: 1–4 blocks
-        const gap = Math.floor(Math.random() * 4) + 1;
-
-        for (let i = 0; i < platformLen; i++) {
-            const bx = x + i * UNIT_SIZE;
-            if (bx >= endX) break;
-            const blockType: 'brick' | 'question' = Math.random() > 0.7 ? 'question' : 'brick';
-            platforms.push({
-                id: getUniqueId('platform'),
-                pos: { x: bx, y: floorY },
-                vel: { x: 0, y: 0 },
-                width: UNIT_SIZE,
-                height: UNIT_SIZE,
-                type: 'block',
-                blockType,
-            } as Block);
-        }
-
-        x += (platformLen + gap) * UNIT_SIZE;
-    }
+    });
 
     return platforms;
 }
@@ -106,10 +106,13 @@ function generatePlatforms(): Block[] {
 /** Generate monsters with difficulty scaling */
 function generateObstacles(stage: number): Entity[] {
     const entities: Entity[] = [];
-    const monsterChance = (0.15 + (stage - 1) * 0.1) * 2;
-    const monsterSpeed = 2 + (stage - 1) * 1.5;
+    const bossTriggerX = getBossTriggerX(stage);
 
-    for (let bx = 500; bx < BOSS_TRIGGER_X - 500; bx += UNIT_SIZE * 2) {
+    // Difficulty logic: base chance + stage scaling, then frequency scaling
+    const monsterChance = (0.15 + (stage - 1) * 0.1) * 2 * Math.pow(MONSTERS.SPAWN_FREQ_SCALING, stage - 1);
+    const monsterSpeed = 2 + (stage - 1) * MONSTERS.SPEED_SCALING_FACTOR;
+
+    for (let bx = 500; bx < bossTriggerX - 500; bx += UNIT_SIZE * 2) {
         // Monsters
         if (Math.random() < monsterChance) {
             entities.push(createMonster(bx, monsterSpeed));
@@ -126,29 +129,31 @@ export function createMonster(x: number, baseSpeed: number): Monster {
     let mHeight = UNIT_SIZE;
     let mVelX = -baseSpeed;
     let mPosY = 450;
-    let mHP = 2; // Default for skinny
+    let mHP = MONSTERS.TYPES.SKINNY.HP;
 
-    if (rand < 0.33) {
+    const { SKINNY, FAT, FLY } = MONSTERS.TYPES;
+
+    if (rand < SKINNY.SPAWN_WEIGHT) {
         mType = 'skinny';
-        mWidth = UNIT_SIZE * 1.05;
-        mHeight = UNIT_SIZE * 1.35;
-        mVelX = -baseSpeed * 0.9;
+        mWidth = UNIT_SIZE * SKINNY.WIDTH_RATIO;
+        mHeight = UNIT_SIZE * SKINNY.HEIGHT_RATIO;
+        mVelX = -baseSpeed * SKINNY.SPEED_MULT;
         mPosY = GROUND_Y - mHeight;
-        mHP = 2;
-    } else if (rand < 0.66) {
+        mHP = SKINNY.HP;
+    } else if (rand < SKINNY.SPAWN_WEIGHT + FAT.SPAWN_WEIGHT) {
         mType = 'fat';
-        mWidth = UNIT_SIZE * 2.25;
-        mHeight = UNIT_SIZE * 1.8;
-        mVelX = -baseSpeed * 0.49;
+        mWidth = UNIT_SIZE * FAT.WIDTH_RATIO;
+        mHeight = UNIT_SIZE * FAT.HEIGHT_RATIO;
+        mVelX = -baseSpeed * FAT.SPEED_MULT;
         mPosY = GROUND_Y - mHeight;
-        mHP = 3;
+        mHP = FAT.HP;
     } else {
         mType = 'fly';
-        mWidth = UNIT_SIZE;
-        mHeight = UNIT_SIZE * 0.8;
-        mVelX = -baseSpeed * 1.2;
+        mWidth = UNIT_SIZE * FLY.WIDTH_RATIO;
+        mHeight = UNIT_SIZE * FLY.HEIGHT_RATIO;
+        mVelX = -baseSpeed * FLY.SPEED_MULT;
         mPosY = 200 + Math.random() * 150;
-        mHP = 1;
+        mHP = FLY.HP;
     }
 
     return {
@@ -164,11 +169,12 @@ export function createMonster(x: number, baseSpeed: number): Monster {
     } as Monster;
 }
 
+
 /** Generate all entities for a stage. Returns the full entity array. */
 export function generateStage(stage: number): Entity[] {
     resetIds();
-    const ground = generateGround();
-    const platforms = generatePlatforms();
+    const ground = generateGround(stage);
+    const platforms = generatePlatforms(stage);
     const obstacles = generateObstacles(stage);
     return [...ground, ...platforms, ...obstacles];
 }
