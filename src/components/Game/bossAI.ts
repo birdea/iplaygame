@@ -10,6 +10,10 @@ export interface BossTactics {
     lastDirChangeTime: number; // when we last changed direction
     dirChangeCooldown: number; // ms until next direction change
     targetY: number;           // target Y for floating above tiles
+    retreatEndTime: number;    // when to stop facing right / retreating
+    turnTargetFacing?: 'left' | 'right'; // Facing to switch to after delay
+    turnAtTime?: number;       // Timestamp when to switch
+    visualFacing: number;      // Current lerped facing value (-1 to 1)
 }
 
 export function createBossTactics(): BossTactics {
@@ -21,6 +25,8 @@ export function createBossTactics(): BossTactics {
         lastDirChangeTime: 0,
         dirChangeCooldown: 1500 + Math.random() * 1500,
         targetY: 0,
+        retreatEndTime: 0,
+        visualFacing: -1,
     };
 }
 
@@ -35,13 +41,14 @@ export function createBossEntity(stage: number): Entity {
     const triggerX = getBossTriggerX(stage);
     return {
         id: 'boss',
-        pos: { x: triggerX + BOSS.SPAWN_OFFSET_X, y: spawnY },
+        pos: { x: triggerX + 1000, y: spawnY }, // Far right of screen
         vel: { x: -2, y: 0 },
         width: BOSS.SIZE,
         height: BOSS.SIZE,
         type: 'boss',
         hp: BOSS.BASE_HP * stage,
         maxHP: BOSS.BASE_HP * stage,
+        facing: 'left',
     };
 }
 
@@ -59,23 +66,22 @@ export function updateBoss(
     cameraX: number,
     spawnBullet: (bullet: Entity) => void,
 ): void {
-    // --- Hover above tiles ---
-    // Ground tiles are at y=500, boss should hover just above them
-    const GROUND_Y = PHYSICS.GROUND_Y;
-    const HOVER_GAP = BOSS.HOVER_GAP; // pixels above ground
-    const targetY = GROUND_Y - boss.height - HOVER_GAP;
+    // --- Free Vertical Movement ---
+    // Target player's Y level but stay within screen/ground bounds
+    const playerTargetY = player.pos.y - boss.height / 4;
+    const minY = 50; // Don't go above screen
+    const maxY = PHYSICS.GROUND_Y - boss.height - 10;
+    const targetY = Math.max(minY, Math.min(maxY, playerTargetY));
 
-    // Smooth vertical approach (spring-like)
-    const dy = targetY - boss.pos.y;
-    boss.vel.y += dy * 0.05;
-    boss.vel.y *= 0.85; // damping
+    // Floating sine wave offset for "natural" feel
+    const floatOffset = Math.sin(time / 1000) * 30;
+    const finalTargetY = targetY + floatOffset;
+
+    // Smooth movement logic (acceleration/damping)
+    const dy = finalTargetY - boss.pos.y;
+    boss.vel.y += dy * 0.02;
+    boss.vel.y *= 0.9;
     boss.pos.y += boss.vel.y;
-
-    // Clamp so boss never goes underground
-    if (boss.pos.y > targetY) {
-        boss.pos.y = targetY;
-        boss.vel.y = 0;
-    }
 
     // --- Horizontal movement: varied left/right patterns ---
     const now = time;
@@ -105,7 +111,32 @@ export function updateBoss(
             tactics.moveDir = Math.random() < 0.5 ? -1 : 1;
             tactics.dirChangeCooldown = 1000 + Math.random() * 2000;
         }
+
+        // New: Occasionally enter retreat mode
+        if (Math.random() < BOSS.RETREAT_CHANCE) {
+            tactics.retreatEndTime = now + BOSS.RETREAT_DURATION_MS;
+        }
+
         tactics.lastDirChangeTime = now;
+    }
+
+    // --- Turn timer logic ---
+    if (tactics.turnAtTime && now >= tactics.turnAtTime) {
+        if (tactics.turnTargetFacing) {
+            boss.facing = tactics.turnTargetFacing;
+        }
+        tactics.turnAtTime = 0;
+        tactics.turnTargetFacing = undefined;
+    }
+
+    // --- Smooth Facing Lerp ---
+    const targetVF = boss.facing === 'left' ? -1 : 1;
+    tactics.visualFacing += (targetVF - tactics.visualFacing) * 0.1;
+
+    // --- Apply Retreat State Overrides ---
+    if (now < tactics.retreatEndTime) {
+        tactics.moveDir = 1; // Always move right
+        boss.facing = 'right';
     }
 
     // Speed scales with stage and distance to player
@@ -143,14 +174,18 @@ export function updateBoss(
                 const waveOffset = Math.sin(phase + time / 500) * (10 + stage * 5);
                 const spreadIdx = i - (bulletCount / 2);
 
-                // Base speed for breath
                 const speed = BOSS.BULLET_SPEED_BASE + stage * 0.5;
+                const bossCenterX = boss.pos.x + boss.width / 2;
+                const bossScale = boss.width / 300;
+                const headOffset = 60 * bossScale;
+                const headX = boss.facing === 'left' ? bossCenterX - headOffset : bossCenterX + headOffset;
+                const fireDir = boss.facing === 'left' ? -1 : 1;
 
                 spawnBullet({
                     id: `boss-fire-${Date.now()}-${i}`,
-                    pos: { x: boss.pos.x, y: boss.pos.y + boss.height * 0.4 + spreadIdx * 5 + waveOffset },
+                    pos: { x: headX, y: boss.pos.y + boss.height * 0.4 + spreadIdx * 5 + waveOffset },
                     vel: {
-                        x: -speed * Math.cos(targetAngleY) - (Math.random() * 2),
+                        x: fireDir * (speed * Math.cos(targetAngleY) + (Math.random() * 2)),
                         y: speed * Math.sin(targetAngleY) + (spreadIdx * 1.5) + (Math.sin(time / 200 + i) * 2)
                     },
                     width: 30 + (stage > 2 ? 10 : 0),
@@ -161,7 +196,6 @@ export function updateBoss(
             }, i * Math.max(40, 150 - stage * 15));
         }
     }
-
 
     // Attack duration countdown
     if (tactics.attackDuration > 0) {

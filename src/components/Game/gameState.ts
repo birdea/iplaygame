@@ -48,6 +48,11 @@ export interface GameLoopState {
     powerups: { bigBullet: number; fastRun: number };
     isPaused: boolean;
     stage: number;
+
+    // Visual / Feedback state
+    lastDamageTime: number;
+    lastBlockHitSwingTime: number; // To limit to 1 block hit per swing
+    bossWarning: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -62,6 +67,7 @@ export function createInitialGameState(stage: number = 1): GameLoopState {
             width: PLAYER_WIDTH,
             height: PLAYER_HEIGHT,
             type: 'player',
+            facing: 'right',
         },
         entities: [],
         bullets: [],
@@ -88,6 +94,9 @@ export function createInitialGameState(stage: number = 1): GameLoopState {
         powerups: { bigBullet: 0, fastRun: 0 },
         isPaused: false,
         stage,
+        lastDamageTime: 0,
+        lastBlockHitSwingTime: 0,
+        bossWarning: false,
     };
 }
 
@@ -117,6 +126,7 @@ export function createGameActions(
             if (now < gs.invincibleUntil || now < gs.shieldUntil) return false;
             gs.hp -= amount;
             gs.invincibleUntil = now + INVINCIBILITY_DURATION;
+            gs.lastDamageTime = now;
             syncFn();
             return true;
         },

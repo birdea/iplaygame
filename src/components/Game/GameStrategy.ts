@@ -104,7 +104,7 @@ export const GAME_STRATEGY = {
         /** HP scales with stage: BASE_HP * stage */
         BASE_HP: 50,
         /** Size of the boss entity (px) */
-        SIZE: 400,
+        SIZE: 300,
         /** Boss appears at getBossTriggerX(stage) + OFFSET */
         SPAWN_OFFSET_X: 600,
         /** Pixels to hover above ground */
@@ -124,11 +124,30 @@ export const GAME_STRATEGY = {
         BULLET_SPEED_BASE: 8,
         /** Boss collision hitbox ratio */
         HITBOX_RATIO: 0.7,
+        /** Scroll range ratio during boss fight (±50% of screen width) */
+        SCROLL_LOCK_RATIO: 0.5,
+        /** Interval for infinite platform spawning during boss fight (ms) */
+        PLATFORM_SPAWN_INTERVAL_MS: 3000,
+        /** Boss heads home/retreats to the right for this duration (ms) */
+        RETREAT_DURATION_MS: 5000,
+        /** Chance to enter retreat mode per direction check */
+        RETREAT_CHANCE: 0.15,
+        /** Limbs configuration */
+        LIMBS: {
+            ARMS_BASE: 2,
+            ARMS_PER_STAGE: 1,
+            LEGS_BASE: 2,
+            LEGS_PER_STAGE: 1,
+            SEGMENT_COUNT: 3,
+            SEGMENT_LENGTH: 35,
+        },
     },
 
     // --- ITEMS & POWERUPS ---
     ITEMS: {
         LIFETIME_MS: 10000,
+        /** Item size multiplier */
+        SIZE_MULTIPLIER: 2.0,
         /** Items move horizontally at this speed */
         ROAM_SPEED: 1.5,
         /** Initial upward burst when popping out of a block */
@@ -159,26 +178,41 @@ export const GAME_STRATEGY = {
         /** Total number of stages to conquer */
         TOTAL_STAGES: 3,
         /** Base stage length: 100m * 1.5^(stage-1) */
+        /** Total length of stage (m) */
         BASE_LENGTH_UNITS: 100,
         LENGTH_SCALING: 1.5,
         /** Boss trigger point: 80m * 1.5^(stage-1) */
         BOSS_TRIGGER_UNITS: 80,
-        /** Chance for a hole/gap to appear in the ground */
-        GROUND_HOLE_CHANCE: 0.12,
+        /** Chance for a hole/gap to appear in the ground (Reduced for higher frequency) */
+        GROUND_HOLE_CHANCE: 0.06,
         /** Chance for a question block instead of brick */
         QUESTION_BLOCK_CHANCE: 0.15, // 1.0 - 0.85
 
         PLATFORMS: {
-            /** Chance to skip a section on a floor to create a gap */
-            FLOOR_GAP_CHANCE: 0.25,
+            /** Chance to skip a section on a floor to create a gap (Reduced for higher frequency) */
+            FLOOR_GAP_CHANCE: 0.12,
             MIN_BLOCKS: 2,
             MAX_BLOCKS: 6,
             MIN_GAP_UNITS: 3,
             MAX_GAP_UNITS: 7,
             /** Platform crumble timings (ms) */
-            CRUMBLE_WARN_MS: 1000,
-            CRUMBLE_FALL_MS: 2000,
+            CRUMBLE_TOTAL_TIME_MS: 1000,
+            CRUMBLE_WARN_MS: 300,
+            CRUMBLE_FALL_MS: 1000,
+            /** Tile health (number of hits to break) */
+            BLOCK_MAX_HITS: 4,
+            /** Number of platform floors */
+            FLOOR_COUNT: 5,
+            /** Whether to drop items when ANY block is destroyed (not just hit once) */
+            DROP_ITEM_ON_DESTROY: true,
         }
+    },
+
+    // --- ATTACK ANGLES ---
+    ATTACK: {
+        RIGHT: { MIN: -Math.PI / 6, MAX: Math.PI / 6 }, // 2 o'clock to 4 o'clock
+        LEFT: { MIN: Math.PI * 5 / 6, MAX: Math.PI * 7 / 6 }, // 10 o'clock to 8 o'clock
+        UP: { MIN: -Math.PI * 2 / 3, MAX: -Math.PI / 3 }, // 11 to 1 o'clock
     },
 
     // --- SCORING ---
