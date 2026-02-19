@@ -313,7 +313,7 @@ export function drawDragon(
     ctx.restore();
 }
 
-/** Draw the player character with arms, legs, club weapon, and optional face image */
+/** Draw the player character with arms, legs, weapon, and optional face image */
 export function drawPlayer(
     ctx: CanvasRenderingContext2D,
     p: Entity,
@@ -326,6 +326,7 @@ export function drawPlayer(
     shieldUntil: number = 0,
     aCharged: boolean = false,
     lastMegaSwingTime: number = 0,
+    weapon: 'sword' | 'club' = 'club',
 ): void {
     const now = Date.now();
     const isShieldActive = shieldUntil > now;
@@ -430,154 +431,442 @@ export function drawPlayer(
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-15, 15); ctx.stroke();
     ctx.restore();
 
-    // Right arm + Flail
-    ctx.save();
+    // Right arm + Weapon (sword or flail/club)
+    if (weapon === 'sword') {
+        // ── SWORD WEAPON ──
+        const attackDir = p.attackDir || p.facing || 'right';
 
-    const attackDir = p.attackDir || p.facing || 'right';
-    const isFlipped = p.facing === 'left';
-    let baseAngle = 0;
+        const normalDuration = 500;
+        const megaDuration = 700;
+        const duration = isMegaSwinging ? megaDuration : normalDuration;
+        const elapsed_sw = isMegaSwinging ? megaElapsed : swingElapsed;
+        const progress = Math.min(1.0, elapsed_sw / duration);
 
-    if (attackDir === 'up') baseAngle = -Math.PI / 2;
-    else if (attackDir === 'down') baseAngle = Math.PI / 2;
-    // Handled by flipped scale usually, but let's be safe
-    else if (attackDir === 'left') baseAngle = isFlipped ? 0 : Math.PI;
-    else if (attackDir === 'right') baseAngle = isFlipped ? Math.PI : 0;
 
-    // Body center-ish shoulder
-    ctx.translate(25, 40);
-    ctx.rotate(baseAngle);
+        // Attack direction → angle
+        let dirAngle = 0;
+        if (attackDir === 'up') dirAngle = -Math.PI / 2;
+        else if (attackDir === 'down') dirAngle = Math.PI / 2;
+        else if (attackDir === 'left') dirAngle = Math.PI;
+        else dirAngle = 0; // right
 
-    const normalDuration = 500;
-    const megaDuration = 600;
-    const duration = isMegaSwinging ? megaDuration : normalDuration;
-    const elapsed = isMegaSwinging ? megaElapsed : swingElapsed;
-    const progress = Math.min(1.0, elapsed / duration);
-
-    let rightArmAngle = 0;
-    let flailRotation = 0;
-    let chainExtensionRatio = 0; // 0 = close to body, 1 = full reach
-    let isSpinning = false;
-    let spinAngle = 0;
-
-    if (isSwinging || isMegaSwinging) {
-        // Attack phases: 0-0.3: Spin around body, 0.3-0.7: Extend, 0.7-1.0: Retract
-        if (progress < 0.3) {
-            isSpinning = true;
-            const spinProgress = progress / 0.3;
-            spinAngle = spinProgress * Math.PI * 2;
-            rightArmAngle = -Math.PI / 4 + Math.sin(spinProgress * Math.PI) * 0.2;
-            chainExtensionRatio = 0.2; // Stay close during spin
-        } else {
-            // Extend and retract
-            const throwProgress = (progress - 0.3) / 0.7;
-            const throwPhase = Math.sin(throwProgress * Math.PI); // 0 -> 1 -> 0
-
-            // Swing arc: wider for mega
-            const arcSize = isMegaSwinging ? Math.PI : Math.PI / 3;
-            rightArmAngle = -arcSize / 2 + throwPhase * arcSize;
-
-            chainExtensionRatio = 0.2 + throwPhase * 0.8;
-            flailRotation = throwPhase * 0.1;
-        }
-    } else {
-        // Idle: Attached to body (behind back)
-        rightArmAngle = Math.PI * 0.6; // Pointing down and back
-        chainExtensionRatio = 0.1;
-    }
-
-    if (isSpinning) {
-        ctx.restore(); // Back to player local space to spin around center
-        ctx.save();
-        ctx.translate(25, 40); // Rotate around body center
-        ctx.rotate(spinAngle);
-
-        // Draw spinning chain and ball
-        const spinRadius = 40 + (isMegaSwinging ? 20 : 0);
-        ctx.strokeStyle = '#9E9E9E';
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(spinRadius, 0);
-        ctx.stroke();
-
-        drawFlailBall(ctx, spinRadius, 0, time, isMegaSwinging, isBigBullet, progress, isSwinging || isMegaSwinging);
-        ctx.restore();
-    } else {
-        ctx.rotate(rightArmAngle);
-
-        // Arm extension
-        const armLen = isSwinging || isMegaSwinging ? 25 : 15;
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(armLen, 0);
-        ctx.stroke();
-
-        // Handle
-        ctx.save();
-        ctx.translate(armLen, 0);
-        ctx.rotate(flailRotation);
-        ctx.strokeStyle = '#4E342E';
-        ctx.lineWidth = 10;
-        const handleLen = (isSwinging || isMegaSwinging) ? 35 : 10;
-        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(handleLen, 0); ctx.stroke();
-
-        // Chain
-        ctx.translate(handleLen, 0);
-        const baseChainLen = CLUB_LENGTH;
-        const currentChainLen = isMegaSwinging
-            ? (baseChainLen * 0.2 + chainExtensionRatio * baseChainLen * 2.5)
-            : (baseChainLen * 0.2 + chainExtensionRatio * baseChainLen);
-
-        drawChain(ctx, currentChainLen, isMegaSwinging);
-
-        // Ball
-        drawFlailBall(ctx, currentChainLen, 0, time, isMegaSwinging, isBigBullet, progress, isSwinging || isMegaSwinging);
-        ctx.restore();
-        ctx.restore();
-    }
-
-    // Move drawFlailBall and drawChain into helper functions outside drawPlayer or defined locally
-    function drawChain(ctx: CanvasRenderingContext2D, length: number, mega: boolean) {
-        const segments = 12;
-        const segLen = length / segments;
-        ctx.strokeStyle = mega ? '#FFD700' : '#9E9E9E';
-        ctx.lineWidth = mega ? 7 : 4;
-        let lx = 0, ly = 0;
-        for (let i = 1; i <= segments; i++) {
-            const rx = i * segLen;
-            const ry = Math.sin((i / segments) * Math.PI) * (isSwinging || isMegaSwinging ? -10 : 5);
-            ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(rx, ry); ctx.stroke();
-            ctx.fillStyle = '#757575';
-            ctx.beginPath(); ctx.arc(rx, ry, 3, 0, Math.PI * 2); ctx.fill();
-            lx = rx; ly = ry;
-        }
-    }
-
-    function drawFlailBall(ctx: CanvasRenderingContext2D, x: number, y: number, t: number, mega: boolean, big: boolean, p: number, active: boolean) {
-        ctx.save();
-        ctx.translate(x, y);
-        const ballColor = (big || mega) ? '#FFD700' : '#263238';
-        ctx.fillStyle = ballColor;
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 3;
-        const ballRadius = mega ? GAME_STRATEGY.WEAPON.MEGA_FLAIL_RADIUS : GAME_STRATEGY.WEAPON.FLAIL_RADIUS;
-        ctx.beginPath(); ctx.arc(0, 0, ballRadius, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-
-        // Spikes
-        ctx.fillStyle = (big || mega) ? '#FFF176' : '#546E7A';
-        const rotation = t / 150 + (active ? p * 15 : 0);
-        for (let s = 0; s < 8; s++) {
+        if (isMegaSwinging) {
+            // ── MEGA CHARGE: 360° spin + thrust combo ──
             ctx.save();
-            ctx.rotate(rotation + (s * Math.PI * 2) / 8);
-            ctx.beginPath();
-            ctx.moveTo(ballRadius - 5, -10);
-            ctx.lineTo(ballRadius + ballRadius * 0.8, 0); // Proportional spikes
-            ctx.lineTo(ballRadius - 5, 10);
-            ctx.closePath();
-            ctx.fill(); ctx.stroke();
+            ctx.translate(25, 40);
+
+            const spinAngle = progress * Math.PI * 4; // 2 full rotations
+            // Thrust extend during spin (0→85→0)
+            const thrustOffset = Math.sin(progress * Math.PI * 2) * 30;
+
+            // Trailing arcs
+            if (progress > 0.12) {
+                const trailCount = 5;
+                const sweepAngle = Math.min(Math.PI * 2, progress * Math.PI * 7);
+                for (let t = 0; t < trailCount; t++) {
+                    const alpha = (1 - t / trailCount) * Math.max(0, 1.3 - progress * 1.6);
+                    if (alpha <= 0) continue;
+                    ctx.save();
+                    ctx.globalAlpha = alpha * 0.75;
+                    const trailRad = 110 + thrustOffset + t * 8;
+                    ctx.strokeStyle = t % 2 === 0 ? '#FF6B35' : '#FFFFFF';
+                    ctx.lineWidth = 9 - t;
+                    ctx.lineCap = 'round';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, trailRad, spinAngle - sweepAngle, spinAngle);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+                ctx.globalAlpha = 1;
+                // Shockwave ring
+                if (progress > 0.3 && progress < 0.75) {
+                    const burstA = Math.sin((progress - 0.3) / 0.45 * Math.PI);
+                    ctx.save();
+                    ctx.globalAlpha = burstA * 0.45;
+                    ctx.strokeStyle = '#FF8C42';
+                    ctx.lineWidth = 4;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 120 + thrustOffset, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                    ctx.globalAlpha = 1;
+                }
+            }
+            // translate outward by thrustOffset along spin direction
+            ctx.rotate(spinAngle);
+            ctx.translate(thrustOffset, 0);
+            drawDragonSlayer(ctx, 120, true, progress, isBigBullet);
+            ctx.restore();
+
+        } else if (isSwinging) {
+            // ── NORMAL ATTACK: Thrust (찌르기) + Shake + Retract ──
+            // Phase 0.00-0.30: thrust out rapidly
+            // Phase 0.30-0.55: shake up/down violently
+            // Phase 0.55-1.00: retract back
+            ctx.save();
+            ctx.translate(25, 40); // shoulder
+
+            let thrustDist = 0;   // how far forward blade extends
+            let shakeY = 0;       // vertical shake offset
+
+            if (progress < 0.30) {
+                // Rapid thrust forward: easeOut cubic
+                const t = progress / 0.30;
+                const ease = 1 - Math.pow(1 - t, 3);
+                thrustDist = ease * 80;
+            } else if (progress < 0.55) {
+                // Violent shake: full extension + shake
+                thrustDist = 80;
+                const shakeT = (progress - 0.30) / 0.25;
+                shakeY = Math.sin(shakeT * Math.PI * 5) * 14; // 5 rapid oscillations
+            } else {
+                // Retract quickly: easeIn cubic
+                const t = (progress - 0.55) / 0.45;
+                const ease = Math.pow(t, 2);
+                thrustDist = 80 * (1 - ease);
+            }
+
+            // Small impact flash at peak
+            if (progress > 0.27 && progress < 0.42) {
+                const flashA = Math.sin((progress - 0.27) / 0.15 * Math.PI);
+                ctx.save();
+                ctx.globalAlpha = flashA * 0.5;
+                ctx.fillStyle = '#FFD580';
+                const fx = Math.cos(dirAngle) * (thrustDist + 110);
+                const fy = Math.sin(dirAngle) * (thrustDist + 110);
+                ctx.beginPath();
+                ctx.arc(fx, fy, 16, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                ctx.globalAlpha = 1;
+            }
+
+            // Thrust trail lines
+            if (thrustDist > 5) {
+                const trailA = Math.min(progress / 0.3, 1) * (1 - Math.max(0, (progress - 0.55) / 0.45)) * 0.5;
+                ctx.save();
+                ctx.globalAlpha = trailA;
+                ctx.strokeStyle = '#C8C8D8';
+                ctx.lineWidth = 6;
+                ctx.lineCap = 'round';
+                const sx = Math.cos(dirAngle) * 5;
+                const sy = Math.sin(dirAngle) * 5;
+                const ex = Math.cos(dirAngle) * (thrustDist + 30);
+                const ey = Math.sin(dirAngle) * (thrustDist + 30);
+                ctx.beginPath(); ctx.moveTo(sx, sy - 5); ctx.lineTo(ex, ey - 5); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(sx, sy + 5); ctx.lineTo(ex, ey + 5); ctx.stroke();
+                ctx.restore();
+                ctx.globalAlpha = 1;
+            }
+
+            // Position sword: rotated to dir, translated forward by thrustDist, shakeY applied perpendicular
+            const perpX = -Math.sin(dirAngle) * shakeY;
+            const perpY = Math.cos(dirAngle) * shakeY;
+            ctx.rotate(dirAngle);
+            ctx.translate(thrustDist + perpX, perpY);
+            drawDragonSlayer(ctx, 110, false, progress, isBigBullet);
+            ctx.restore();
+
+        } else {
+            // ── IDLE: Dragon Slayer dragged/held diagonally on back ──
+            ctx.save();
+            ctx.translate(25, 40);
+            // Held at ~-70° (up-right) with subtle breathing bob
+            const idleAngle = -Math.PI * 0.38 + Math.sin(time / 800) * 0.05;
+            ctx.rotate(idleAngle);
+            drawDragonSlayer(ctx, 110, false, 0, isBigBullet);
             ctx.restore();
         }
-        ctx.restore();
+
+        // ── Dragon Slayer (Berserk Guts style) ──
+        // A massive, thick, wide, BLUNT-tipped cleaver sword.
+        function drawDragonSlayer(
+            ctx2: CanvasRenderingContext2D,
+            length: number,
+            mega: boolean,
+            prog: number,
+            big: boolean
+        ) {
+            const bladeColor = mega ? '#9AA8C0' : (big ? '#C8A040' : '#8890A0');
+            const rimColor = mega ? '#D0DFFF' : (big ? '#FFE090' : '#C0C8D8');
+            const guardColor = mega ? '#4060A0' : (big ? '#8B6914' : '#555566');
+            const gripColor = mega ? '#2A3A5A' : '#3A2010';
+
+            ctx2.save();
+
+            // Mega glint flicker
+            if (mega && prog > 0.1) {
+                const glintA = Math.abs(Math.sin(prog * Math.PI * 8)) * 0.9;
+                ctx2.save();
+                ctx2.globalAlpha = glintA;
+                ctx2.shadowColor = '#FF8C42';
+                ctx2.shadowBlur = 18;
+                ctx2.strokeStyle = '#FFDDAA';
+                ctx2.lineWidth = 2.5;
+                ctx2.beginPath();
+                ctx2.moveTo(10, 0);
+                ctx2.lineTo(length * 0.7, 0);
+                ctx2.stroke();
+                ctx2.restore();
+                ctx2.globalAlpha = 1;
+            }
+
+            // ─── BLADE (Dragon Slayer style) ───
+            // Extremely wide, thick, rectangle-ish with very slight taper and BLUNT end
+            const bladeW = mega ? 22 : 18;  // half-width at base
+            const tipW = mega ? 14 : 11;  // half-width at blunt tip (thick)
+
+            ctx2.beginPath();
+            ctx2.moveTo(0, -bladeW);              // base top
+            ctx2.lineTo(length, -tipW);           // tip top – slight taper
+            ctx2.lineTo(length + 4, 0);           // blunt flat tip center
+            ctx2.lineTo(length, tipW);            // tip bottom
+            ctx2.lineTo(0, bladeW);               // base bottom
+            ctx2.closePath();
+            ctx2.fillStyle = bladeColor;
+            ctx2.fill();
+
+            // Dark outline
+            ctx2.strokeStyle = '#222';
+            ctx2.lineWidth = 2;
+            ctx2.stroke();
+
+            // ─── Surface details ───
+            // Center fuller groove (horizontal scratch lines)
+            ctx2.save();
+            ctx2.strokeStyle = rimColor;
+            ctx2.lineWidth = 2;
+            ctx2.globalAlpha = 0.55;
+            ctx2.beginPath();
+            ctx2.moveTo(6, -bladeW * 0.3);
+            ctx2.lineTo(length * 0.9, -tipW * 0.3);
+            ctx2.stroke();
+            ctx2.beginPath();
+            ctx2.moveTo(6, bladeW * 0.3);
+            ctx2.lineTo(length * 0.9, tipW * 0.3);
+            ctx2.stroke();
+            // Top-edge bright strip
+            ctx2.lineWidth = 3;
+            ctx2.globalAlpha = 0.75;
+            ctx2.beginPath();
+            ctx2.moveTo(4, -bladeW + 2);
+            ctx2.lineTo(length - 2, -tipW + 2);
+            ctx2.stroke();
+            // Nicks / scratches (battle damage)
+            ctx2.globalAlpha = 0.35;
+            ctx2.strokeStyle = '#000';
+            ctx2.lineWidth = 1.5;
+            for (let n = 0; n < 5; n++) {
+                const nx = 20 + n * (length * 0.15);
+                const side = n % 2 === 0 ? -1 : 1;
+                ctx2.beginPath();
+                ctx2.moveTo(nx, side * (bladeW - 3));
+                ctx2.lineTo(nx + 4, side * (bladeW - 8));
+                ctx2.stroke();
+            }
+            ctx2.restore();
+
+            // ─── CROSSGUARD (wide, brutal) ───
+            const guardW = mega ? 34 : 28;
+            const guardLen = mega ? 16 : 12;
+            ctx2.fillStyle = guardColor;
+            ctx2.strokeStyle = '#111';
+            ctx2.lineWidth = 2;
+            ctx2.beginPath();
+            ctx2.roundRect(-guardLen / 2, -guardW / 2, guardLen, guardW, 2);
+            ctx2.fill();
+            ctx2.stroke();
+            // Rivets on guard
+            ctx2.fillStyle = '#999';
+            ctx2.beginPath(); ctx2.arc(-2, -guardW * 0.3, 3, 0, Math.PI * 2); ctx2.fill();
+            ctx2.beginPath(); ctx2.arc(-2, guardW * 0.3, 3, 0, Math.PI * 2); ctx2.fill();
+
+            // ─── GRIP (two-handed, long) ───
+            const gripLen = 28;
+            ctx2.save();
+            ctx2.translate(-guardLen / 2, 0);
+            // Wrapped leather
+            ctx2.strokeStyle = gripColor;
+            ctx2.lineWidth = 9;
+            ctx2.lineCap = 'square';
+            ctx2.beginPath();
+            ctx2.moveTo(0, 0);
+            ctx2.lineTo(-gripLen, 0);
+            ctx2.stroke();
+            // Wrapping bands
+            ctx2.strokeStyle = 'rgba(0,0,0,0.45)';
+            ctx2.lineWidth = 2.5;
+            ctx2.lineCap = 'butt';
+            for (let g = 1; g <= 5; g++) {
+                const gx = -g * (gripLen / 6);
+                ctx2.beginPath();
+                ctx2.moveTo(gx, -5); ctx2.lineTo(gx, 5); ctx2.stroke();
+            }
+            ctx2.restore();
+
+            // ─── POMMEL (heavy, rectangular) ───
+            const pommelW = mega ? 14 : 11;
+            const pommelH = mega ? 10 : 8;
+            ctx2.fillStyle = guardColor;
+            ctx2.strokeStyle = '#111';
+            ctx2.lineWidth = 2;
+            ctx2.beginPath();
+            ctx2.roundRect(-guardLen / 2 - gripLen - pommelW, -pommelH / 2, pommelW, pommelH, 2);
+            ctx2.fill();
+            ctx2.stroke();
+
+            ctx2.restore();
+        }
+
+    } else {
+        // ── CLUB / FLAIL WEAPON ──
+        ctx.save();
+
+        const attackDir = p.attackDir || p.facing || 'right';
+        const isFlipped = p.facing === 'left';
+        let baseAngle = 0;
+
+        if (attackDir === 'up') baseAngle = -Math.PI / 2;
+        else if (attackDir === 'down') baseAngle = Math.PI / 2;
+        // Handled by flipped scale usually, but let's be safe
+        else if (attackDir === 'left') baseAngle = isFlipped ? 0 : Math.PI;
+        else if (attackDir === 'right') baseAngle = isFlipped ? Math.PI : 0;
+
+        // Body center-ish shoulder
+        ctx.translate(25, 40);
+        ctx.rotate(baseAngle);
+
+        const normalDuration = 500;
+        const megaDuration = 600;
+        const duration = isMegaSwinging ? megaDuration : normalDuration;
+        const elapsed = isMegaSwinging ? megaElapsed : swingElapsed;
+        const progress = Math.min(1.0, elapsed / duration);
+
+        let rightArmAngle = 0;
+        let flailRotation = 0;
+        let chainExtensionRatio = 0; // 0 = close to body, 1 = full reach
+        let isSpinning = false;
+        let spinAngle = 0;
+
+        if (isSwinging || isMegaSwinging) {
+            // Attack phases: 0-0.3: Spin around body, 0.3-0.7: Extend, 0.7-1.0: Retract
+            if (progress < 0.3) {
+                isSpinning = true;
+                const spinProgress = progress / 0.3;
+                spinAngle = spinProgress * Math.PI * 2;
+                rightArmAngle = -Math.PI / 4 + Math.sin(spinProgress * Math.PI) * 0.2;
+                chainExtensionRatio = 0.2; // Stay close during spin
+            } else {
+                // Extend and retract
+                const throwProgress = (progress - 0.3) / 0.7;
+                const throwPhase = Math.sin(throwProgress * Math.PI); // 0 -> 1 -> 0
+
+                // Swing arc: wider for mega
+                const arcSize = isMegaSwinging ? Math.PI : Math.PI / 3;
+                rightArmAngle = -arcSize / 2 + throwPhase * arcSize;
+
+                chainExtensionRatio = 0.2 + throwPhase * 0.8;
+                flailRotation = throwPhase * 0.1;
+            }
+        } else {
+            // Idle: Attached to body (behind back)
+            rightArmAngle = Math.PI * 0.6; // Pointing down and back
+            chainExtensionRatio = 0.1;
+        }
+
+        if (isSpinning) {
+            ctx.restore(); // Back to player local space to spin around center
+            ctx.save();
+            ctx.translate(25, 40); // Rotate around body center
+            ctx.rotate(spinAngle);
+
+            // Draw spinning chain and ball
+            const spinRadius = 40 + (isMegaSwinging ? 20 : 0);
+            ctx.strokeStyle = '#9E9E9E';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(spinRadius, 0);
+            ctx.stroke();
+
+            drawFlailBall(ctx, spinRadius, 0, time, isMegaSwinging, isBigBullet, progress, isSwinging || isMegaSwinging);
+            ctx.restore();
+        } else {
+            ctx.rotate(rightArmAngle);
+
+            // Arm extension
+            const armLen = isSwinging || isMegaSwinging ? 25 : 15;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(armLen, 0);
+            ctx.stroke();
+
+            // Handle
+            ctx.save();
+            ctx.translate(armLen, 0);
+            ctx.rotate(flailRotation);
+            ctx.strokeStyle = '#4E342E';
+            ctx.lineWidth = 10;
+            const handleLen = (isSwinging || isMegaSwinging) ? 35 : 10;
+            ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(handleLen, 0); ctx.stroke();
+
+            // Chain
+            ctx.translate(handleLen, 0);
+            const baseChainLen = CLUB_LENGTH;
+            const currentChainLen = isMegaSwinging
+                ? (baseChainLen * 0.2 + chainExtensionRatio * baseChainLen * 2.5)
+                : (baseChainLen * 0.2 + chainExtensionRatio * baseChainLen);
+
+            drawChain(ctx, currentChainLen, isMegaSwinging);
+
+            // Ball
+            drawFlailBall(ctx, currentChainLen, 0, time, isMegaSwinging, isBigBullet, progress, isSwinging || isMegaSwinging);
+            ctx.restore();
+            ctx.restore();
+        }
+
+        function drawChain(ctx: CanvasRenderingContext2D, length: number, mega: boolean) {
+            const segments = 12;
+            const segLen = length / segments;
+            ctx.strokeStyle = mega ? '#FFD700' : '#9E9E9E';
+            ctx.lineWidth = mega ? 7 : 4;
+            let lx = 0, ly = 0;
+            for (let i = 1; i <= segments; i++) {
+                const rx = i * segLen;
+                const ry = Math.sin((i / segments) * Math.PI) * (isSwinging || isMegaSwinging ? -10 : 5);
+                ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(rx, ry); ctx.stroke();
+                ctx.fillStyle = '#757575';
+                ctx.beginPath(); ctx.arc(rx, ry, 3, 0, Math.PI * 2); ctx.fill();
+                lx = rx; ly = ry;
+            }
+        }
+
+        function drawFlailBall(ctx: CanvasRenderingContext2D, x: number, y: number, t: number, mega: boolean, big: boolean, p: number, active: boolean) {
+            ctx.save();
+            ctx.translate(x, y);
+            const ballColor = (big || mega) ? '#FFD700' : '#263238';
+            ctx.fillStyle = ballColor;
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            const ballRadius = mega ? GAME_STRATEGY.WEAPON.MEGA_FLAIL_RADIUS : GAME_STRATEGY.WEAPON.FLAIL_RADIUS;
+            ctx.beginPath(); ctx.arc(0, 0, ballRadius, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+            // Spikes
+            ctx.fillStyle = (big || mega) ? '#FFF176' : '#546E7A';
+            const rotation = t / 150 + (active ? p * 15 : 0);
+            for (let s = 0; s < 8; s++) {
+                ctx.save();
+                ctx.rotate(rotation + (s * Math.PI * 2) / 8);
+                ctx.beginPath();
+                ctx.moveTo(ballRadius - 5, -10);
+                ctx.lineTo(ballRadius + ballRadius * 0.8, 0); // Proportional spikes
+                ctx.lineTo(ballRadius - 5, 10);
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+                ctx.restore();
+            }
+            ctx.restore();
+        }
     }
 
     // Head
@@ -590,8 +879,23 @@ export function drawPlayer(
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(25, 25, 25, 0, Math.PI * 2); ctx.stroke();
     } else {
+        // Plain face: skin color
         ctx.fillStyle = '#FFCCBC';
         ctx.beginPath(); ctx.arc(25, 25, 25, 0, Math.PI * 2); ctx.fill();
+
+        // Black eyes – indicate facing direction
+        const eyeOffsetX = p.facing === 'left' ? -7 : 7;
+        // Both eyes, shifted toward facing side
+        ctx.fillStyle = '#1a1a1a';
+        // Left eye (circle r=4)
+        ctx.beginPath(); ctx.arc(25 + eyeOffsetX - 5, 20, 4, 0, Math.PI * 2); ctx.fill();
+        // Right eye (circle r=4)
+        ctx.beginPath(); ctx.arc(25 + eyeOffsetX + 5, 20, 4, 0, Math.PI * 2); ctx.fill();
+        // Pupils (pointing toward facing, circle r=1.8)
+        ctx.fillStyle = '#FFFFFF';
+        const pupilShift = p.facing === 'left' ? -2 : 2;
+        ctx.beginPath(); ctx.arc(25 + eyeOffsetX - 5 + pupilShift, 19, 1.8, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(25 + eyeOffsetX + 5 + pupilShift, 19, 1.8, 0, Math.PI * 2); ctx.fill();
     }
 
     ctx.restore();

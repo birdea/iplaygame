@@ -1,11 +1,14 @@
 import { create } from 'zustand';
 import { GAME_STRATEGY } from '../components/Game/GameStrategy';
 
+export type WeaponType = 'sword' | 'club';
+
 export interface GameState {
   // UI navigation (authoritative here)
   screen: 'menu' | 'settings' | 'game' | 'gameover' | 'victory';
   faces: string[];
   selectedFaceIndex: number;
+  selectedWeapon: WeaponType;
 
   // Mirrored from game loop (read-only for React HUD consumption)
   hp: number;
@@ -21,6 +24,7 @@ export interface GameState {
   setScreen: (screen: GameState['screen']) => void;
   addFace: (face: string) => void;
   selectFace: (index: number) => void;
+  setWeapon: (weapon: WeaponType) => void;
   resetGame: () => void;
   nextStage: () => void;
   syncFromLoop: (data: {
@@ -39,6 +43,7 @@ export const useGameStore = create<GameState>((set) => ({
   screen: 'menu',
   faces: [],
   selectedFaceIndex: 0,
+  selectedWeapon: 'sword',
   stage: 1,
   score: 0,
   hp: 3,
@@ -62,6 +67,8 @@ export const useGameStore = create<GameState>((set) => ({
   }),
 
   selectFace: (index) => set({ selectedFaceIndex: index }),
+
+  setWeapon: (weapon) => set({ selectedWeapon: weapon }),
 
   resetGame: () => set({
     stage: 1,

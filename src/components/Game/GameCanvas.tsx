@@ -41,6 +41,7 @@ export const GameCanvas: React.FC = () => {
     const setScreen = useGameStore(s => s.setScreen);
     const faces = useGameStore(s => s.faces);
     const selectedFaceIndex = useGameStore(s => s.selectedFaceIndex);
+    const selectedWeapon = useGameStore(s => s.selectedWeapon);
 
     // Read-only mirrors from Zustand (driven by syncFromLoop)
     const storeIsPaused = useGameStore(s => s.isPaused);
@@ -451,7 +452,7 @@ export const GameCanvas: React.FC = () => {
             ctx.shadowBlur = 0;
             ctx.shadowOffsetX = 3;
             ctx.shadowOffsetY = 3;
-            drawPlayer(ctx, p, time, isMoving, faceImage.current, Date.now() < gs.invincibleUntil, gs.powerups, gs.lastSwingTime, gs.shieldUntil, gs.aCharged, gs.lastMegaSwingTime);
+            drawPlayer(ctx, p, time, isMoving, faceImage.current, Date.now() < gs.invincibleUntil, gs.powerups, gs.lastSwingTime, gs.shieldUntil, gs.aCharged, gs.lastMegaSwingTime, selectedWeapon);
             ctx.restore();
 
             ctx.restore();
