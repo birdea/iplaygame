@@ -30,7 +30,17 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ setKey }) => {
 
     return (
         <div className="mobile-controls">
-            {/* D-Pad */}
+            {/* WASD Pad (Now on the left) */}
+            <div className="wasd-pad">
+                <div />
+                <Button code="KeyW" label="W" className="btn-w" onHandlePress={handlePress} />
+                <div />
+                <Button code="KeyA" label="A" className={`btn-a ${aCharged ? 'charged' : ''}`} onHandlePress={handlePress} />
+                <Button code="KeyS" label="S" className="btn-s" onHandlePress={handlePress} />
+                <Button code="KeyD" label="D" className="btn-d" onHandlePress={handlePress} />
+            </div>
+
+            {/* D-Pad (Now on the right) */}
             <div className="d-pad">
                 <div />
                 <Button code="ArrowUp" label="▲" onHandlePress={handlePress} />
@@ -38,13 +48,6 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ setKey }) => {
                 <Button code="ArrowLeft" label="◀" onHandlePress={handlePress} />
                 <Button code="ArrowDown" label="▼" onHandlePress={handlePress} />
                 <Button code="ArrowRight" label="▶" onHandlePress={handlePress} />
-            </div>
-
-            {/* Action Buttons */}
-            <div className="action-buttons">
-                <Button code="KeyA" label="A" className={`btn-a ${aCharged ? 'charged' : ''}`} onHandlePress={handlePress} />
-                <Button code="KeyS" label="S" className="btn-s" onHandlePress={handlePress} />
-                <Button code="KeyD" label="D" className="btn-d" onHandlePress={handlePress} />
             </div>
         </div>
     );

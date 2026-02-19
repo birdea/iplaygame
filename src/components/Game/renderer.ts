@@ -1,13 +1,14 @@
 import type { Entity, Monster, GroundItem, Effect } from '../../types';
-import { COLORS, STAGE_LENGTH, CLUB_LENGTH } from '../../constants';
+import { COLORS, getStageLength, CLUB_LENGTH, CANVAS_WIDTH, CANVAS_HEIGHT } from '../../constants';
+import { GAME_STRATEGY } from './GameStrategy';
 
 /** Draw parallax sky, clouds, and hills */
 export function drawBackground(ctx: CanvasRenderingContext2D, cameraX: number, time: number): void {
-    const width = 1000;
+    const width = CANVAS_WIDTH;
 
     // Sky
     ctx.fillStyle = COLORS.SKY;
-    ctx.fillRect(0, 0, width, 600);
+    ctx.fillRect(0, 0, width, CANVAS_HEIGHT);
 
     // Clouds (Far Parallax - 10% speed)
     const cloudX = -(cameraX * 0.1) % 400;
@@ -30,8 +31,8 @@ export function drawBackground(ctx: CanvasRenderingContext2D, cameraX: number, t
     for (let i = -1; i < 3; i++) {
         const hx = hillX + i * 800;
         ctx.beginPath();
-        ctx.moveTo(hx, 500);
-        ctx.quadraticCurveTo(hx + 200, 200, hx + 400, 500);
+        ctx.moveTo(hx, GAME_STRATEGY.PHYSICS.GROUND_Y);
+        ctx.quadraticCurveTo(hx + 200, 200, hx + 400, GAME_STRATEGY.PHYSICS.GROUND_Y);
         ctx.fill();
         ctx.stroke();
 
@@ -39,8 +40,8 @@ export function drawBackground(ctx: CanvasRenderingContext2D, cameraX: number, t
         ctx.fillStyle = '#32CD32';
         const hx2 = hillX + i * 800 + 400;
         ctx.beginPath();
-        ctx.moveTo(hx2, 500);
-        ctx.quadraticCurveTo(hx2 + 150, 300, hx2 + 300, 500);
+        ctx.moveTo(hx2, GAME_STRATEGY.PHYSICS.GROUND_Y);
+        ctx.quadraticCurveTo(hx2 + 150, 300, hx2 + 300, GAME_STRATEGY.PHYSICS.GROUND_Y);
         ctx.fill();
         ctx.stroke();
         ctx.restore();
@@ -116,7 +117,7 @@ export function drawBlock(
 }
 
 /** Draw the dragon boss (flipped to face left) */
-export function drawDragon(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, time: number, state: string): void {
+export function drawDragon(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, time: number, state: string, stage: number = 1): void {
     ctx.save();
     ctx.translate(x + width / 2, y + height / 2);
     ctx.scale(-1, 1); // Face left
@@ -187,11 +188,13 @@ export function drawDragon(ctx: CanvasRenderingContext2D, x: number, y: number, 
         ctx.save();
         ctx.translate(100, 0);
         ctx.fillStyle = '#FFEB3B';
-        for (let i = 0; i < 5; i++) {
-            const fx = Math.random() * 60;
-            const fy = (Math.random() - 0.5) * 50;
+        // 2x longer (60 -> 120) and 20% increase per level
+        const breathLen = 120 * Math.pow(1.2, stage - 1);
+        for (let i = 0; i < 8; i++) {
+            const fx = Math.random() * breathLen;
+            const fy = (Math.random() - 0.5) * 60;
             ctx.beginPath();
-            ctx.arc(fx, fy, 15 + Math.random() * 10, 0, Math.PI * 2);
+            ctx.arc(fx, fy, 15 + Math.random() * 15, 0, Math.PI * 2);
             ctx.fill();
         }
         ctx.restore();
@@ -219,20 +222,17 @@ export function drawPlayer(
     const isShieldActive = shieldUntil > now;
     if (isInvincible && !isShieldActive && Math.floor(time / 100) % 2 === 0) return;
 
-    const { pos } = p;
     const walkCycle = isMoving ? Math.sin(time / 100) : 0;
     const armCycle = isMoving ? Math.sin(time / 100 + Math.PI) : 0;
+    const { pos } = p;
 
     // Swing animation: 0.5s duration after lastSwingTime
     const swingElapsed = time - lastSwingTime;
     const isSwinging = swingElapsed < 500;
-    // swingPhase: 0→1→0 arc over 500ms
-    const swingPhase = isSwinging ? Math.sin((swingElapsed / 500) * Math.PI) : 0;
 
     // Mega Swing animation: 0.6s duration
     const megaElapsed = time - lastMegaSwingTime;
     const isMegaSwinging = megaElapsed < 600;
-    const megaPhase = isMegaSwinging ? Math.sin((megaElapsed / 600) * Math.PI) : 0;
 
     ctx.save();
     ctx.translate(pos.x, pos.y);
@@ -321,103 +321,134 @@ export function drawPlayer(
     ctx.save();
     ctx.translate(45, 38);
 
-    let rightArmAngle = -armCycle * 0.5;
+    const normalDuration = 500;
+    const megaDuration = 600;
+    const duration = isMegaSwinging ? megaDuration : normalDuration;
+    const elapsed = isMegaSwinging ? megaElapsed : swingElapsed;
+    const progress = Math.min(1.0, elapsed / duration);
+
+    let rightArmAngle = 0;
     let flailRotation = 0;
+    let chainExtensionRatio = 0; // 0 = close to body, 1 = full reach
+    let isSpinning = false;
+    let spinAngle = 0;
 
-    if (isMegaSwinging) {
-        // Arm points slightly forward-up
-        rightArmAngle = -Math.PI * 0.3;
-        // Flail itself rotates to point forward (right 20 deg)
-        flailRotation = -Math.PI * 0.3;
-    } else if (isSwinging) {
-        rightArmAngle = -Math.PI * 0.6 + swingPhase * Math.PI * 1.1;
+    if (isSwinging || isMegaSwinging) {
+        // Attack phases: 0-0.3: Spin around body, 0.3-0.7: Extend, 0.7-1.0: Retract
+        if (progress < 0.3) {
+            isSpinning = true;
+            const spinProgress = progress / 0.3;
+            spinAngle = spinProgress * Math.PI * 2;
+            rightArmAngle = -Math.PI / 4 + Math.sin(spinProgress * Math.PI) * 0.2;
+            chainExtensionRatio = 0.2; // Stay close during spin
+        } else {
+            // Extend and retract
+            const throwProgress = (progress - 0.3) / 0.7;
+            const throwPhase = Math.sin(throwProgress * Math.PI); // 0 -> 1 -> 0
+            rightArmAngle = -Math.PI / 6 + throwPhase * (Math.PI / 3);
+            chainExtensionRatio = 0.2 + throwPhase * 0.8;
+            flailRotation = throwPhase * 0.1;
+        }
+    } else {
+        // Idle: Attached to body (behind back)
+        rightArmAngle = Math.PI * 0.6; // Pointing down and back
+        chainExtensionRatio = 0.1;
     }
 
-    ctx.rotate(rightArmAngle);
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(15, 15); ctx.stroke();
-
-    // Flail (Handle + Chain + Spiked Ball)
-    ctx.save();
-    ctx.translate(15, 15);
-    ctx.rotate(flailRotation); // Apply extra rotation for throw
-
-    // 1. Handle
-    ctx.strokeStyle = '#4E342E';
-    ctx.lineWidth = 8;
-    const handleLen = 30;
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, handleLen); ctx.stroke();
-
-    // 2. Flexible Chain
-    const chainSegments = 15;
-    const baseChainLen = CLUB_LENGTH;
-    // Stretch chain during mega swing - even further (up to 3x base)
-    const currentChainLen = isMegaSwinging ? baseChainLen + megaPhase * CLUB_LENGTH * 2.5 : baseChainLen;
-    const segmentLen = currentChainLen / chainSegments;
-    // curveAmount: less hanging, more "whip" like for mega swing
-    const curveAmount = isSwinging ? Math.sin(swingPhase * Math.PI) * 40 :
-        isMegaSwinging ? Math.sin(megaPhase * Math.PI) * -15 : 0;
-
-    ctx.translate(0, handleLen);
-    ctx.strokeStyle = isMegaSwinging ? '#FFD700' : '#9E9E9E';
-    ctx.lineWidth = isMegaSwinging ? 6 : 3;
-
-    let lastX = 0;
-    let lastY = 0;
-
-    for (let i = 1; i <= chainSegments; i++) {
-        const ratio = i / chainSegments;
-        // Straighter trajectory for mega throw
-        const currentX = Math.sin(ratio * Math.PI * (isMegaSwinging ? 0.1 : 0.5)) * curveAmount;
-        const currentY = i * segmentLen;
-
-        // Draw link line
-        ctx.beginPath();
-        ctx.moveTo(lastX, lastY);
-        ctx.lineTo(currentX, currentY);
-        ctx.stroke();
-
-        // Link circle decoration
-        ctx.fillStyle = '#757575';
-        ctx.beginPath(); ctx.arc(currentX, currentY, 4, 0, Math.PI * 2); ctx.fill();
-
-        lastX = currentX;
-        lastY = currentY;
-    }
-
-    // 3. Spiked Iron Ball
-    ctx.save();
-    ctx.translate(lastX, lastY);
-    const ballColor = (isBigBullet || isMegaSwinging) ? '#FFD700' : '#263238';
-    ctx.fillStyle = ballColor;
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 2;
-
-    const ballRadius = isMegaSwinging ? 35 : 25;
-    ctx.beginPath();
-    ctx.arc(0, 0, ballRadius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    // Spikes
-    ctx.fillStyle = (isBigBullet || isMegaSwinging) ? '#FFF176' : '#546E7A';
-    const numSpikes = 8;
-    const rotation = time / 150 + (isSwinging ? swingPhase * 10 : isMegaSwinging ? megaPhase * 20 : 0);
-    for (let s = 0; s < numSpikes; s++) {
+    if (isSpinning) {
+        ctx.restore(); // Back to player local space to spin around center
         ctx.save();
-        ctx.rotate(rotation + (s * Math.PI * 2) / numSpikes);
+        ctx.translate(25, 40); // Rotate around body center
+        ctx.rotate(spinAngle);
+
+        // Draw spinning chain and ball
+        const spinRadius = 40 + (isMegaSwinging ? 20 : 0);
+        ctx.strokeStyle = '#9E9E9E';
+        ctx.lineWidth = 4;
         ctx.beginPath();
-        ctx.moveTo(ballRadius - 5, -8);
-        ctx.lineTo(ballRadius + 20, 0);
-        ctx.lineTo(ballRadius - 5, 8);
-        ctx.closePath();
-        ctx.fill();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(spinRadius, 0);
         ctx.stroke();
+
+        drawFlailBall(ctx, spinRadius, 0, time, isMegaSwinging, isBigBullet, progress, isSwinging || isMegaSwinging);
+        ctx.restore();
+    } else {
+        ctx.rotate(rightArmAngle);
+
+        // Arm extension
+        const armLen = isSwinging || isMegaSwinging ? 25 : 15;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(armLen, 0);
+        ctx.stroke();
+
+        // Handle
+        ctx.save();
+        ctx.translate(armLen, 0);
+        ctx.rotate(flailRotation);
+        ctx.strokeStyle = '#4E342E';
+        ctx.lineWidth = 10;
+        const handleLen = (isSwinging || isMegaSwinging) ? 35 : 10;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(handleLen, 0); ctx.stroke();
+
+        // Chain
+        ctx.translate(handleLen, 0);
+        const baseChainLen = CLUB_LENGTH;
+        const currentChainLen = isMegaSwinging
+            ? (baseChainLen * 0.2 + chainExtensionRatio * baseChainLen * 2.5)
+            : (baseChainLen * 0.2 + chainExtensionRatio * baseChainLen);
+
+        drawChain(ctx, currentChainLen, isMegaSwinging);
+
+        // Ball
+        drawFlailBall(ctx, currentChainLen, 0, time, isMegaSwinging, isBigBullet, progress, isSwinging || isMegaSwinging);
+        ctx.restore();
         ctx.restore();
     }
 
-    ctx.restore();
-    ctx.restore();
-    ctx.restore();
+    // Move drawFlailBall and drawChain into helper functions outside drawPlayer or defined locally
+    function drawChain(ctx: CanvasRenderingContext2D, length: number, mega: boolean) {
+        const segments = 12;
+        const segLen = length / segments;
+        ctx.strokeStyle = mega ? '#FFD700' : '#9E9E9E';
+        ctx.lineWidth = mega ? 7 : 4;
+        let lx = 0, ly = 0;
+        for (let i = 1; i <= segments; i++) {
+            const rx = i * segLen;
+            const ry = Math.sin((i / segments) * Math.PI) * (isSwinging || isMegaSwinging ? -10 : 5);
+            ctx.beginPath(); ctx.moveTo(lx, ly); ctx.lineTo(rx, ry); ctx.stroke();
+            ctx.fillStyle = '#757575';
+            ctx.beginPath(); ctx.arc(rx, ry, 3, 0, Math.PI * 2); ctx.fill();
+            lx = rx; ly = ry;
+        }
+    }
+
+    function drawFlailBall(ctx: CanvasRenderingContext2D, x: number, y: number, t: number, mega: boolean, big: boolean, p: number, active: boolean) {
+        ctx.save();
+        ctx.translate(x, y);
+        const ballColor = (big || mega) ? '#FFD700' : '#263238';
+        ctx.fillStyle = ballColor;
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+        const ballRadius = mega ? GAME_STRATEGY.WEAPON.MEGA_FLAIL_RADIUS : GAME_STRATEGY.WEAPON.FLAIL_RADIUS;
+        ctx.beginPath(); ctx.arc(0, 0, ballRadius, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+        // Spikes
+        ctx.fillStyle = (big || mega) ? '#FFF176' : '#546E7A';
+        const rotation = t / 150 + (active ? p * 15 : 0);
+        for (let s = 0; s < 8; s++) {
+            ctx.save();
+            ctx.rotate(rotation + (s * Math.PI * 2) / 8);
+            ctx.beginPath();
+            ctx.moveTo(ballRadius - 5, -10);
+            ctx.lineTo(ballRadius + ballRadius * 0.8, 0); // Proportional spikes
+            ctx.lineTo(ballRadius - 5, 10);
+            ctx.closePath();
+            ctx.fill(); ctx.stroke();
+            ctx.restore();
+        }
+        ctx.restore();
+    }
 
     // Head
     if (faceImg) {
@@ -482,9 +513,27 @@ export function drawMonster(
     const wobbleAngle = Math.sin(time / 400) * 0.18;
     if (faceImg) {
         ctx.save();
-        ctx.translate(e.width / 2, e.height); // Bottom center of face area
+        ctx.translate(e.width / 2, e.height / 2); // Center of the monster body
         ctx.rotate(wobbleAngle);
-        ctx.drawImage(faceImg, -e.width / 2 + 2, -e.height + 2, e.width - 4, e.height - 4);
+
+        // Circular clipping path
+        ctx.beginPath();
+        ctx.arc(0, -e.height / 2 + e.height / 2, e.width / 2 - 2, 0, Math.PI * 2);
+        ctx.clip();
+
+        // Draw the face image scaled to the monster size
+        ctx.drawImage(faceImg, -e.width / 2 + 2, -e.height / 2 + 2, e.width - 4, e.height - 4);
+        ctx.restore();
+
+        // Optional: Draw a circular border to make it look cleaner
+        ctx.save();
+        ctx.translate(e.width / 2, e.height / 2);
+        ctx.rotate(wobbleAngle);
+        ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, e.width / 2 - 2, 0, Math.PI * 2);
+        ctx.stroke();
         ctx.restore();
     }
 
@@ -632,6 +681,7 @@ export function drawMinimap(
     cameraX: number,
     player: Entity,
     boss: Entity | undefined,
+    stage: number,
 ): void {
     ctx.save();
     ctx.translate(canvasWidth - minimapWidth - 20, 20);
@@ -639,13 +689,14 @@ export function drawMinimap(
     ctx.fillRect(0, 0, minimapWidth, minimapHeight);
     ctx.clip();
 
-    const mScaleX = minimapWidth / STAGE_LENGTH;
+    const stageLength = getStageLength(stage);
+    const mScaleX = minimapWidth / stageLength;
     const mScaleY = minimapHeight / 600;
     ctx.scale(mScaleX, mScaleY);
     ctx.translate(-cameraX, 0);
 
     ctx.fillStyle = '#5D4037';
-    ctx.fillRect(cameraX, 500, STAGE_LENGTH + 1000, 100);
+    ctx.fillRect(cameraX, 500, stageLength + 1000, 100);
 
     if (boss) {
         ctx.fillStyle = '#FF1744';

@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Play, Settings as SettingsIcon } from 'lucide-react';
 import { useGameStore } from '../../store/useGameStore';
+import { GAME_STRATEGY } from '../Game/GameStrategy';
 
 export const Menu: React.FC = () => {
     const setScreen = useGameStore((state) => state.setScreen);
@@ -13,8 +14,9 @@ export const Menu: React.FC = () => {
                 animate={{ y: 0, opacity: 1 }}
                 className="text-4xl md:text-6xl font-extrabold text-white drop-shadow-lg tracking-tighter text-center"
             >
-                KIDS <span className="text-primary">ADVENTURE</span>
+                {GAME_STRATEGY.GENERAL.TITLE.split(' ')[0]} <span className="text-primary">{GAME_STRATEGY.GENERAL.TITLE.split(' ')[1]}</span>
             </motion.h1>
+
             <motion.div
                 initial={{ scale: 0, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}

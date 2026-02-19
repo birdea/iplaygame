@@ -1,29 +1,40 @@
-export const UNIT_SIZE = 50; // 1m = 50px
-export const STAGE_LENGTH = 100 * UNIT_SIZE; // 5000px
-export const BOSS_TRIGGER_X = 80 * UNIT_SIZE; // 4000px
+import { GAME_STRATEGY } from '../components/Game/GameStrategy';
 
-export const GRAVITY = 0.5;
-export const JUMP_FORCE = -15;
-export const MOVE_SPEED = 5;
-export const BULLET_SPEED = 10;
+export const UNIT_SIZE = 50; // 1m = 50px
+export const getStageLength = (stage: number) =>
+    GAME_STRATEGY.STAGE.BASE_LENGTH_UNITS * UNIT_SIZE * Math.pow(GAME_STRATEGY.STAGE.LENGTH_SCALING, stage - 1);
+export const getBossTriggerX = (stage: number) =>
+    GAME_STRATEGY.STAGE.BOSS_TRIGGER_UNITS * UNIT_SIZE * Math.pow(GAME_STRATEGY.STAGE.LENGTH_SCALING, stage - 1);
+
+export const GRAVITY = GAME_STRATEGY.PHYSICS.GRAVITY;
+export const JUMP_FORCE = GAME_STRATEGY.PHYSICS.JUMP_FORCE;
+export const MOVE_SPEED = GAME_STRATEGY.PHYSICS.MOVE_SPEED;
+export const BULLET_SPEED = 10; // Base speed for player bullet
 
 export const PLAYER_WIDTH = 50;
-export const PLAYER_HEIGHT = 80; // Tall Mario-like height
-export const CLUB_LENGTH = 106; // Reduced to 60% of 176
-export const CLUB_RANGE = 240; // Reduced to 60% of 400
-export const BOSS_SIZE = 400; // Roughly 7-8x player width, fits in canvas height
+export const PLAYER_HEIGHT = 80;
+export const CLUB_LENGTH = 106;
+export const CLUB_RANGE = GAME_STRATEGY.PLAYER.CLUB_RANGE;
+export const BOSS_SIZE = GAME_STRATEGY.BOSS.SIZE;
+
 export const MINIMAP_SCALE = 0.15;
 export const MINIMAP_WIDTH = 150;
 export const MINIMAP_HEIGHT = 90;
 
 export const COLORS = {
-    SKY: '#5CE0FF',      // Brighter SMB3 Sky
-    GROUND: '#E59110',   // Orange-brown ground flavor
-    BRICK: '#BA5D11',    // Brick brown
-    QUESTION: '#F7D01B', // Golden Yellow
+    SKY: '#5CE0FF',
+    GROUND: '#E59110',
+    BRICK: '#BA5D11',
+    QUESTION: '#F7D01B',
 };
+
+export const CANVAS_WIDTH = 1000;
+export const CANVAS_HEIGHT = 600;
+
 export const AUTO_SCROLL_SPEED = 1.0;
-export const INVINCIBILITY_DURATION = 2000; // 2 seconds
-export const SHIELD_DURATION = 5000; // 5 seconds
-export const SHIELD_REFILL = 3;
-export const AMMO_REFILL = 30;
+
+export const INVINCIBILITY_DURATION = GAME_STRATEGY.PLAYER.INVINCIBILITY_DURATION_MS;
+export const SHIELD_DURATION = 5000;
+export const SHIELD_REFILL = GAME_STRATEGY.ITEMS.SHIELD_REFILL;
+export const AMMO_REFILL = GAME_STRATEGY.ITEMS.AMMO_REFILL;
+

@@ -1,5 +1,5 @@
 import type { Entity } from '../../types';
-import { BOSS_SIZE, BOSS_TRIGGER_X } from '../../constants';
+import { getBossTriggerX } from '../../constants';
 
 export interface BossTactics {
     lastAttackTime: number;
@@ -24,20 +24,24 @@ export function createBossTactics(): BossTactics {
     };
 }
 
+import { GAME_STRATEGY } from './GameStrategy';
+
+const { BOSS, PHYSICS } = GAME_STRATEGY;
+
 export function createBossEntity(stage: number): Entity {
     // Boss spawns to the right of the trigger, floating above ground tiles (y=500)
-    // Boss height = BOSS_SIZE, so to hover above ground: y = 500 - BOSS_SIZE - hover_gap
-    const hoverGap = 20;
-    const spawnY = 500 - BOSS_SIZE - hoverGap;
+    const hoverGap = BOSS.HOVER_GAP;
+    const spawnY = PHYSICS.GROUND_Y - BOSS.SIZE - hoverGap;
+    const triggerX = getBossTriggerX(stage);
     return {
         id: 'boss',
-        pos: { x: BOSS_TRIGGER_X + 600, y: spawnY },
+        pos: { x: triggerX + BOSS.SPAWN_OFFSET_X, y: spawnY },
         vel: { x: -2, y: 0 },
-        width: BOSS_SIZE,
-        height: BOSS_SIZE,
+        width: BOSS.SIZE,
+        height: BOSS.SIZE,
         type: 'boss',
-        hp: 50 * stage,
-        maxHP: 50 * stage,
+        hp: BOSS.BASE_HP * stage,
+        maxHP: BOSS.BASE_HP * stage,
     };
 }
 
@@ -57,8 +61,8 @@ export function updateBoss(
 ): void {
     // --- Hover above tiles ---
     // Ground tiles are at y=500, boss should hover just above them
-    const GROUND_Y = 500;
-    const HOVER_GAP = 20; // pixels above ground
+    const GROUND_Y = PHYSICS.GROUND_Y;
+    const HOVER_GAP = BOSS.HOVER_GAP; // pixels above ground
     const targetY = GROUND_Y - boss.height - HOVER_GAP;
 
     // Smooth vertical approach (spring-like)
@@ -77,9 +81,9 @@ export function updateBoss(
     const now = time;
 
     // Change direction on cooldown or when hitting arena boundaries
-    // Boss should not enter left 25% of the screen (1000px * 0.25 = 250px)
-    const arenaLeft = cameraX + 250;
-    const arenaRight = cameraX + 950 - boss.width;
+    // Boss should not enter left inset of the screen
+    const arenaLeft = cameraX + BOSS.ARENA_INSET_LEFT;
+    const arenaRight = cameraX + (1000 - BOSS.ARENA_INSET_RIGHT) - boss.width;
 
     if (
         now - tactics.lastDirChangeTime > tactics.dirChangeCooldown ||
@@ -105,7 +109,7 @@ export function updateBoss(
     }
 
     // Speed scales with stage and distance to player
-    const baseSpeed = 2 + stage * 0.5;
+    const baseSpeed = BOSS.BASE_SPEED + stage * BOSS.SPEED_STAGE_SCALING;
     const dist = Math.abs(boss.pos.x - player.pos.x);
     const speedMult = dist > 400 ? 1.5 : dist < 150 ? 0.5 : 1.0;
     boss.vel.x = tactics.moveDir * baseSpeed * speedMult;
@@ -115,37 +119,49 @@ export function updateBoss(
     boss.pos.x = Math.max(arenaLeft, Math.min(arenaRight, boss.pos.x));
 
     // --- Fire attack on cooldown ---
-    const cooldown = 3500 / stage;
+    const cooldown = BOSS.FIRE_COOLDOWN_BASE_MS / stage;
     if (time - tactics.lastAttackTime > cooldown) {
         tactics.state = 'fire';
         tactics.lastAttackTime = time;
         tactics.attackDuration = 1000;
 
-        // Difficulty scales with stage: 
-        // Stage 1: 1-3 bullets
-        // Each stage increases max count by 1.5x up to 10
-        const maxBullets = Math.min(10, Math.floor(3 * Math.pow(1.5, stage - 1)));
-        const bulletCount = Math.floor(Math.random() * maxBullets) + 1;
+        // Difficulty scales with stage
+        const baseCount = BOSS.BULLET_COUNT_BASE;
+        const bulletCount = Math.floor(baseCount * Math.pow(BOSS.BULLET_COUNT_SCALING, stage - 1)) + Math.floor(Math.random() * stage);
+
+        // Randomly pick between 7 o'clock and 11 o'clock direction for this wave
+        // 11 o'clock -> Up-Left (-30 deg from left), 7 o'clock -> Down-Left (+30 deg from left)
+        const isEleven = Math.random() < 0.5;
+        const targetAngleY = isEleven ? -Math.PI / 6 : Math.PI / 6;
+
         for (let i = 0; i < bulletCount; i++) {
             setTimeout(() => {
                 if (!gameActive.current) return;
-                // Spread index around 0 for fan pattern
+
+                // complexity increases with stage: wave patterns and spread
+                const phase = (i / bulletCount) * Math.PI * 2;
+                const waveOffset = Math.sin(phase + time / 500) * (10 + stage * 5);
                 const spreadIdx = i - (bulletCount / 2);
+
+                // Base speed for breath
+                const speed = BOSS.BULLET_SPEED_BASE + stage * 0.5;
+
                 spawnBullet({
                     id: `boss-fire-${Date.now()}-${i}`,
-                    pos: { x: boss.pos.x, y: boss.pos.y + boss.height * 0.4 + spreadIdx * 10 },
-                    // Shoot in a wider fan pattern (various angles)
+                    pos: { x: boss.pos.x, y: boss.pos.y + boss.height * 0.4 + spreadIdx * 5 + waveOffset },
                     vel: {
-                        x: -7 - Math.random() * 3,
-                        y: spreadIdx * 2.5 + (Math.random() - 0.5) * 4
+                        x: -speed * Math.cos(targetAngleY) - (Math.random() * 2),
+                        y: speed * Math.sin(targetAngleY) + (spreadIdx * 1.5) + (Math.sin(time / 200 + i) * 2)
                     },
-                    width: 30,
-                    height: 30,
+                    width: 30 + (stage > 2 ? 10 : 0),
+                    height: 30 + (stage > 2 ? 10 : 0),
                     type: 'boss-bullet',
+                    damage: 2, // 2 HP damage
                 });
-            }, i * 150);
+            }, i * Math.max(40, 150 - stage * 15));
         }
     }
+
 
     // Attack duration countdown
     if (tactics.attackDuration > 0) {

@@ -1,5 +1,8 @@
 import type { Entity, Block } from '../../types';
 import { GRAVITY } from '../../constants';
+import { GAME_STRATEGY } from './GameStrategy';
+
+const { COLLISION } = GAME_STRATEGY;
 
 /** AABB overlap check between two entities with optional scaling ratio */
 export function aabbOverlap(a: Entity, b: Entity, ratio: number = 1.0): boolean {
@@ -56,14 +59,21 @@ export function applyVerticalPhysics(
         if (e.type !== 'block') continue;
         if (!aabbOverlap(player, e)) continue;
 
-        if (player.vel.y > 0 && player.pos.y + player.height - player.vel.y <= e.pos.y + 10) {
-            // Landing on top
-            player.pos.y = e.pos.y - player.height;
-            player.vel.y = 0;
-            onGround = true;
-            standingOnBlock = e as Block;
-        } else if (player.vel.y < 0 && player.pos.y - player.vel.y >= e.pos.y + e.height - 10) {
-            // Hitting head on bottom
+        if (player.vel.y > 0 && player.pos.y + player.height - player.vel.y <= e.pos.y + COLLISION.LANDING_BUFFER) {
+            // Landing on top: Check with a narrower footprint 
+            // to allow falling into 1-unit gaps
+            const footprintWidth = player.width * COLLISION.FOOTPRINT_RATIO;
+            const footprintX = player.pos.x + (player.width - footprintWidth) / 2;
+            const isActuallyOnBlock = footprintX < e.pos.x + e.width && footprintX + footprintWidth > e.pos.x;
+
+            if (isActuallyOnBlock) {
+                player.pos.y = e.pos.y - player.height;
+                player.vel.y = 0;
+                onGround = true;
+                standingOnBlock = e as Block;
+            }
+        } else if (player.vel.y < 0 && player.pos.y - player.vel.y >= e.pos.y + e.height - COLLISION.HEAD_HIT_BUFFER) {
+            // Hitting head on bottom (use full width)
             player.pos.y = e.pos.y + e.height;
             player.vel.y = 0;
             if ((e as Block).blockType === 'question') {
@@ -85,7 +95,16 @@ export function applyHorizontalPhysics(player: Entity, blocks: Entity[]): void {
 
     for (const e of blocks) {
         if (e.type !== 'block') continue;
-        if (!aabbOverlap(player, e)) continue;
+
+        // Use a vertically narrower footprint for horizontal collisions
+        // to prevent snapping back when standing on top or hitting corners.
+        const vertInset = COLLISION.HORIZONTAL_INSET;
+        const hasVerticalOverlap = (player.pos.y + vertInset < e.pos.y + e.height) &&
+            (player.pos.y + player.height - vertInset > e.pos.y);
+        const hasHorizontalOverlap = (player.pos.x < e.pos.x + e.width) &&
+            (player.pos.x + player.width > e.pos.x);
+
+        if (!hasVerticalOverlap || !hasHorizontalOverlap) continue;
 
         if (player.vel.x > 0) {
             player.pos.x = e.pos.x - player.width;
@@ -94,3 +113,4 @@ export function applyHorizontalPhysics(player: Entity, blocks: Entity[]): void {
         }
     }
 }
+

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { GAME_STRATEGY } from '../components/Game/GameStrategy';
 
 export interface GameState {
   // UI navigation (authoritative here)
@@ -65,7 +66,7 @@ export const useGameStore = create<GameState>((set) => ({
     powerups: { bigBullet: 0, fastRun: 0 },
   }),
 
-  nextStage: () => set((state) => ({ stage: Math.min(state.stage + 1, 3) })),
+  nextStage: () => set((state) => ({ stage: Math.min(state.stage + 1, GAME_STRATEGY.STAGE.TOTAL_STAGES) })),
 
   syncFromLoop: (data) => set(data),
 }));

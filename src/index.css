@@ -268,17 +268,12 @@ canvas {
   touch-action: none;
 }
 
-.d-pad {
+.d-pad,
+.wasd-pad {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(2, 1fr);
   gap: 0.5rem;
-  pointer-events: auto;
-}
-
-.action-buttons {
-  display: flex;
-  gap: 1rem;
   pointer-events: auto;
 }
 
@@ -306,6 +301,14 @@ canvas {
 .control-btn:active {
   transform: scale(0.9);
   background: rgba(255, 255, 255, 0.3);
+}
+
+.control-btn.btn-w {
+  background: rgba(249, 212, 35, 0.4);
+  border-color: rgba(249, 212, 35, 0.5);
+  border-radius: 50%;
+  width: clamp(45px, 11vw, 67.5px);
+  height: clamp(45px, 11vw, 67.5px);
 }
 
 .control-btn.btn-a {

@@ -2,6 +2,9 @@ import type { Entity, GroundItem, Effect } from '../../types';
 import { BULLET_SPEED, GRAVITY } from '../../constants';
 import { aabbOverlap } from './physics';
 import { createMonster } from './stageGenerator';
+import { GAME_STRATEGY } from './GameStrategy';
+
+const { ITEMS, SCORE, MONSTERS, PLAYER, BOSS } = GAME_STRATEGY;
 
 /** Create a player bullet */
 export function createBullet(player: Entity, isBigBullet: boolean): Entity {
@@ -16,11 +19,6 @@ export function createBullet(player: Entity, isBigBullet: boolean): Entity {
     };
 }
 
-const ITEM_LIFETIME_MS = 10_000;
-const ITEM_GRAVITY = GRAVITY * 0.6;
-const ITEM_ROAM_SPEED = 1.5;
-const ITEM_POP_VEL_Y = -12; // initial upward burst
-
 /** Spawn a ground item that pops out of a question block */
 export function spawnGroundItem(
     block: Entity,
@@ -30,7 +28,7 @@ export function spawnGroundItem(
     return {
         id: `item-${Date.now()}-${Math.random()}`,
         pos: { x: block.pos.x + block.width / 2 - 12, y: block.pos.y - 28 },
-        vel: { x: goLeft ? -ITEM_ROAM_SPEED : ITEM_ROAM_SPEED, y: ITEM_POP_VEL_Y },
+        vel: { x: goLeft ? -ITEMS.ROAM_SPEED : ITEMS.ROAM_SPEED, y: ITEMS.POP_VELOCITY_Y },
         width: 24,
         height: 24,
         powerup,
@@ -58,9 +56,11 @@ export function updateGroundItems(
     let collected: GroundItem['powerup'] | null = null;
     const surviving: GroundItem[] = [];
 
+    const ITEM_GRAVITY = GRAVITY * ITEMS.GRAVITY_MULT;
+
     for (const item of items) {
         // Expire after 10 s
-        if (now - item.spawnedAt >= ITEM_LIFETIME_MS) continue;
+        if (now - item.spawnedAt >= ITEMS.LIFETIME_MS) continue;
 
         // Apply gravity
         item.vel.y += ITEM_GRAVITY;
@@ -89,8 +89,8 @@ export function updateGroundItems(
             item.vel.x = -Math.abs(item.vel.x);
         }
 
-        // Random direction change every ~2 s
-        if (!item.isPopping && Math.random() < 0.008) {
+        // Random direction change
+        if (!item.isPopping && Math.random() < ITEMS.DIR_CHANGE_CHANCE) {
             item.vel.x = -item.vel.x;
         }
 
@@ -171,12 +171,20 @@ export function updateMonsters(
 
             // Point-to-Rectangle distance: 
             // Calculate distance from player's attack center to the nearest point on the monster's hitbox
+            const dx_center = monsterCX - playerCX;
+            const dy_center = monsterCY - playerCY;
+            const angle = Math.atan2(dy_center, dx_center);
+
+            // Point-to-Rectangle distance for range check
             const dx = Math.abs(playerCX - monsterCX) - e.width / 2;
             const dy = Math.abs(playerCY - monsterCY) - e.height / 2;
             const distance = Math.sqrt(Math.max(0, dx) ** 2 + Math.max(0, dy) ** 2);
 
+            // 2 o'clock is -30 deg (-PI/6), 4 o'clock is +30 deg (+PI/6)
+            const isWithinDirection = angle >= -Math.PI / 6 && angle <= Math.PI / 6;
+
             // Use e.lastHitBySwing to prevent multi-hits in one swing
-            if (distance < CLUB_RANGE && e.lastHitBySwing !== lastSwingTime) {
+            if (distance < CLUB_RANGE && e.lastHitBySwing !== lastSwingTime && isWithinDirection) {
                 e.lastHitBySwing = lastSwingTime;
                 e.hp = (e.hp || 1) - damage;
                 spawnSparks(effects, e.pos.x + e.width / 2, e.pos.y + e.height / 2, e.type === 'boss' ? '#FFEB3B' : '#FF5722');
@@ -184,9 +192,9 @@ export function updateMonsters(
                 if (e.hp <= 0) {
                     toRemove.add(e.id);
                     if (e.type === 'monster') {
-                        scoreGainedTotal += 300;
+                        scoreGainedTotal += SCORE.MONSTER_KILL;
                     } else if (e.type === 'boss') {
-                        scoreGainedTotal += 5000;
+                        scoreGainedTotal += SCORE.BOSS_KILL;
                         bossDefeated = true;
                     }
                 }
@@ -204,14 +212,14 @@ export function updateMonsters(
             spawnSparks(effects, e.pos.x + e.width / 2, e.pos.y + e.height / 2, '#4CAF50');
             if (e.hp <= 0) {
                 toRemove.add(e.id);
-                addScore(200);
+                addScore(SCORE.STOMP_KILL);
             }
             continue; // Successfully stomped, don't take damage
         }
 
-        // 3. Normal Collision (Take damage) - Use 0.8 ratio for fairer hits
-        if (isCurrentlyOverlapping && aabbOverlap(player, e, 0.8)) {
-            if (takeDamage(1)) player.pos.x -= 100;
+        // 3. Normal Collision (Take damage) - Use strategy hitbox ratio
+        if (isCurrentlyOverlapping && aabbOverlap(player, e, PLAYER.HITBOX_RATIO)) {
+            if (takeDamage(1)) player.pos.x -= PLAYER.KNOCKBACK_DISTANCE;
         }
     }
 
@@ -260,7 +268,7 @@ export function updateBullets(
                 spawnSparks(effects, b.pos.x, b.pos.y, '#FFEB3B');
                 if (boss.hp! <= 0) {
                     entitiesToRemove.add(boss.id);
-                    scoreGained += 5000;
+                    scoreGained += SCORE.BOSS_KILL;
                     bossDefeated = true;
                 }
             }
@@ -274,15 +282,15 @@ export function updateBullets(
                     spawnSparks(effects, b.pos.x, b.pos.y, '#FFCC80');
                     if (ent.hp <= 0) {
                         entitiesToRemove.add(ent.id);
-                        scoreGained += 200;
+                        scoreGained += SCORE.STOMP_KILL;
                     }
                 }
             }
         } else if (b.type === 'boss-bullet') {
-            if (aabbOverlap(b, player, 0.8)) {
-                if (takeDamage(1)) {
+            if (aabbOverlap(b, player, BOSS.HITBOX_RATIO)) {
+                if (takeDamage(b.damage || 1)) {
                     bulletsToRemove.add(b.id);
-                    player.pos.x -= 50;
+                    player.pos.x -= PLAYER.KNOCKBACK_DISTANCE / 2;
                     spawnSparks(effects, b.pos.x, b.pos.y, '#F44336');
                 }
             }
@@ -320,11 +328,14 @@ export function spawnContinuousMonster(
     time: number,
     lastSpawnTime: { current: number }
 ): void {
-    const SPAWN_INTERVAL = Math.max(1000, 3000 - stage * 200); // Faster at higher stages
+    const baseInterval = Math.max(MONSTERS.MIN_SPAWN_INTERVAL_MS, MONSTERS.BASE_SPAWN_INTERVAL_MS - stage * 200);
+    const SPAWN_INTERVAL = baseInterval / Math.pow(MONSTERS.SPAWN_FREQ_SCALING, stage - 1);
+
     if (time - lastSpawnTime.current > SPAWN_INTERVAL) {
         lastSpawnTime.current = time;
-        const spawnX = cameraX + 1100; // Just off screen to the right
-        const monsterSpeed = 2 + (stage - 1) * 1.5;
+        const spawnX = cameraX + MONSTERS.SPAWN_OFFSET_X;
+        const monsterSpeed = 2 + (stage - 1) * MONSTERS.SPEED_SCALING_FACTOR;
         entities.push(createMonster(spawnX, monsterSpeed));
     }
 }
+
