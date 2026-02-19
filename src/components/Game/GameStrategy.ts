@@ -70,6 +70,7 @@ export const GAME_STRATEGY = {
         /** Spawn frequency increases by this factor per stage */
         SPAWN_FREQ_SCALING: 1.3,
         /** Monster horizontal speed scales by stage: base + (stage-1) * MULT */
+        SPEED_SCALING_FACTOR: 1.5,
         /** Distance ahead of camera to spawn continuous monsters */
         SPAWN_OFFSET_X: 1100,
 
