@@ -28,6 +28,8 @@ export const GAME_STRATEGY = {
 
     // --- PLAYER TUNING ---
     PLAYER: {
+        WIDTH: 25,
+        HEIGHT: 40,
         INITIAL_HP: 5,
         MAX_HP_LIMIT: 10,
         INVINCIBILITY_DURATION_MS: 2000,
