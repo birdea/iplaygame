@@ -6,66 +6,80 @@ interface MobileControlsProps {
     setKey: (code: string, isPressed: boolean) => void;
 }
 
-const Joystick = ({ onMove }: { onMove: (x: number, y: number) => void }) => {
-    const [dragging, setDragging] = useState(false);
+const FloatingJoystick = ({ onMove }: { onMove: (x: number, y: number) => void }) => {
+    const [active, setActive] = useState(false);
+    const [basePos, setBasePos] = useState({ x: 0, y: 0 });
     const [knobPos, setKnobPos] = useState({ x: 0, y: 0 });
-    const containerRef = useRef<HTMLDivElement>(null);
+    const areaRef = useRef<HTMLDivElement>(null);
 
     const handleStart = (e: React.PointerEvent) => {
-        setDragging(true);
-        handleUpdate(e);
+        e.preventDefault();
+        const x = e.clientX;
+        const y = e.clientY;
+        setBasePos({ x, y });
+        setKnobPos({ x: 0, y: 0 });
+        setActive(true);
     };
 
-    const handleUpdate = (e: React.PointerEvent | PointerEvent) => {
-        if (!dragging && e.type !== 'pointerdown') return;
-        const container = containerRef.current;
-        if (!container) return;
+    const handleUpdate = (e: PointerEvent) => {
+        if (!active) return;
 
-        const rect = container.getBoundingClientRect();
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
-        const maxDist = rect.width / 2;
-
-        let dx = e.clientX - centerX;
-        let dy = e.clientY - centerY;
+        const dx = e.clientX - basePos.x;
+        const dy = e.clientY - basePos.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
+        // Define max radius for the knob (clamp(100px, 20vw, 150px) / 2)
+        const maxDist = Math.min(Math.max(window.innerWidth * 0.2, 100), 150) / 2;
+
+        let limitedX = dx;
+        let limitedY = dy;
+
         if (dist > maxDist) {
-            dx = (dx / dist) * maxDist;
-            dy = (dy / dist) * maxDist;
+            limitedX = (dx / dist) * maxDist;
+            limitedY = (dy / dist) * maxDist;
         }
 
-        setKnobPos({ x: dx, y: dy });
-        onMove(dx / maxDist, dy / maxDist);
+        setKnobPos({ x: limitedX, y: limitedY });
+        onMove(limitedX / maxDist, limitedY / maxDist);
     };
 
     const handleEnd = () => {
-        setDragging(false);
+        setActive(false);
         setKnobPos({ x: 0, y: 0 });
         onMove(0, 0);
     };
 
     useEffect(() => {
+        const move = (e: PointerEvent) => handleUpdate(e);
         const up = () => handleEnd();
-        const move = (e: PointerEvent) => dragging && handleUpdate(e);
-        window.addEventListener('pointerup', up);
-        window.addEventListener('pointermove', move);
+        if (active) {
+            window.addEventListener('pointermove', move);
+            window.addEventListener('pointerup', up);
+        }
         return () => {
-            window.removeEventListener('pointerup', up);
             window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
         };
-    }, [dragging]);
+    }, [active, basePos]);
 
     return (
         <div
-            ref={containerRef}
-            className="joystick-base"
+            ref={areaRef}
+            className="joystick-area"
             onPointerDown={handleStart}
+            onContextMenu={(e) => e.preventDefault()}
         >
-            <div
-                className="joystick-knob"
-                style={{ transform: `translate(${knobPos.x}px, ${knobPos.y}px)` }}
-            />
+            {active && (
+                <div
+                    className="joystick-base"
+                    style={{ left: basePos.x, top: basePos.y }}
+                >
+                    <div
+                        className="joystick-knob"
+                        style={{ transform: `translate(${knobPos.x}px, ${knobPos.y}px)` }}
+                    />
+                </div>
+            )}
         </div>
     );
 };
@@ -117,11 +131,16 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ setKey }) => {
             setKey('ArrowRight', false);
         }
 
-        // Vertical (Jump)
+        // Vertical (Jump & Crouch)
         if (y < -0.5) {
             setKey('ArrowUp', true);
+            setKey('ArrowDown', false);
+        } else if (y > 0.5) {
+            setKey('ArrowDown', true);
+            setKey('ArrowUp', false);
         } else {
             setKey('ArrowUp', false);
+            setKey('ArrowDown', false);
         }
     };
 
@@ -141,10 +160,8 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ setKey }) => {
             </button>
 
             <div className="mobile-controls">
-                {/* Left: Joystick */}
-                <div className="left-controls">
-                    <Joystick onMove={handleJoystick} />
-                </div>
+                {/* Left: Dynamic Floating Joystick Area */}
+                <FloatingJoystick onMove={handleJoystick} />
 
                 {/* Right Bottom: Unified HUD with Integrated Action Buttons */}
                 <HUD onHandlePress={handlePress} aCharged={aCharged} />
