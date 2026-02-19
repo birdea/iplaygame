@@ -2,6 +2,7 @@ import type { Entity, GroundItem, Effect } from '../../types';
 import { PLAYER_WIDTH, PLAYER_HEIGHT, INVINCIBILITY_DURATION, SHIELD_DURATION } from '../../constants';
 import type { BossTactics } from './bossAI';
 import { createBossTactics } from './bossAI';
+import { GAME_STRATEGY } from './GameStrategy';
 
 // ---------------------------------------------------------------------------
 // GameLoopState: Single source of truth for all mutable game-loop state
@@ -48,6 +49,10 @@ export interface GameLoopState {
     powerups: { bigBullet: number; fastRun: number };
     isPaused: boolean;
     stage: number;
+
+    blockCooldownUntil: number;
+    isBlocking: boolean;
+    isCrouching: boolean;
 
     // Visual / Feedback state
     lastDamageTime: number;
@@ -97,6 +102,9 @@ export function createInitialGameState(stage: number = 1): GameLoopState {
         lastDamageTime: 0,
         lastBlockHitSwingTime: 0,
         bossWarning: false,
+        blockCooldownUntil: 0,
+        isBlocking: false,
+        isCrouching: false,
     };
 }
 
@@ -114,6 +122,7 @@ export interface GameActions {
     useShield: () => boolean;
     activatePowerup: (type: 'bigBullet' | 'fastRun', duration: number) => void;
     togglePaused: (paused?: boolean) => void;
+    activateBlock: () => boolean;
 }
 
 export function createGameActions(
@@ -124,6 +133,15 @@ export function createGameActions(
         takeDamage(amount: number = 1): boolean {
             const now = Date.now();
             if (now < gs.invincibleUntil || now < gs.shieldUntil) return false;
+
+            if (gs.isBlocking) {
+                gs.isBlocking = false;
+                gs.blockCooldownUntil = now + (GAME_STRATEGY.PLAYER as any).BLOCK_COOLDOWN_MS;
+                gs.invincibleUntil = now + 500; // Brief grace period after block
+                syncFn();
+                return false; // Blocked!
+            }
+
             gs.hp -= amount;
             gs.invincibleUntil = now + INVINCIBILITY_DURATION;
             gs.lastDamageTime = now;
@@ -164,5 +182,14 @@ export function createGameActions(
             gs.isPaused = paused !== undefined ? paused : !gs.isPaused;
             syncFn();
         },
+        activateBlock(): boolean {
+            const now = Date.now();
+            if (!gs.isBlocking && now > gs.blockCooldownUntil) {
+                gs.isBlocking = true;
+                syncFn();
+                return true;
+            }
+            return false;
+        }
     };
 }

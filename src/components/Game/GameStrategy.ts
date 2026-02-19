@@ -28,10 +28,10 @@ export const GAME_STRATEGY = {
 
     // --- PLAYER TUNING ---
     PLAYER: {
-        WIDTH: 25,
-        HEIGHT: 40,
+        WIDTH: 45,
+        HEIGHT: 70,
         INITIAL_HP: 5,
-        MAX_HP_LIMIT: 10,
+        MAX_HP_LIMIT: 20,
         INVINCIBILITY_DURATION_MS: 2000,
         /** Horizontal distance to knock back player when hit */
         KNOCKBACK_DISTANCE: 100,
@@ -49,6 +49,10 @@ export const GAME_STRATEGY = {
         MEGA_SWING_RANGE_MULT: 2,
         /** Collision hitbox ratio for player-monster contact (0.0 to 1.0) */
         HITBOX_RATIO: 0.8,
+        /** Cooldown for the manual parry/block skill (ms) */
+        BLOCK_COOLDOWN_MS: 5000,
+        /** Height ratio when crouching */
+        CROUCH_HEIGHT_RATIO: 0.5,
     },
 
     // --- COLLISION TUNING ---

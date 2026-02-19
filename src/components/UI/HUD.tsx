@@ -2,11 +2,13 @@ import React from 'react';
 import { useGameStore } from '../../store/useGameStore';
 
 export const HUD: React.FC = () => {
-    const { hp, score, ammo, shields, stage, powerups } = useGameStore();
+    const { hp, score, ammo, shields, stage, powerups, shieldUntil, blockCooldownUntil } = useGameStore();
     const now = Date.now();
 
     const bigBulletTime = powerups.bigBullet > now ? Math.ceil((powerups.bigBullet - now) / 1000) : 0;
     const fastRunTime = powerups.fastRun > now ? Math.ceil((powerups.fastRun - now) / 1000) : 0;
+    const shieldTime = shieldUntil > now ? Math.ceil((shieldUntil - now) / 1000) : 0;
+    const blockTime = blockCooldownUntil > now ? Math.ceil((blockCooldownUntil - now) / 1000) : 0;
 
     return (
         <div className="hud-bottom-bar">
@@ -36,6 +38,14 @@ export const HUD: React.FC = () => {
                     )}
                     {fastRunTime > 0 && (
                         <div className="timer-badge fast-run">F: {fastRunTime}s</div>
+                    )}
+                    {shieldTime > 0 && (
+                        <div className="timer-badge shield-invinc">SHIELD: {shieldTime}s</div>
+                    )}
+                    {blockTime > 0 ? (
+                        <div className="timer-badge block-cooldown">PARRY: {blockTime}s</div>
+                    ) : (
+                        <div className="timer-badge block-ready">PARRY READY</div>
                     )}
                 </div>
             </div>

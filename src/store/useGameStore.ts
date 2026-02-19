@@ -19,12 +19,18 @@ export interface GameState {
   aCharged: boolean;
   ammo: number;
   shields: number;
+  shieldUntil: number;
+  blockCooldownUntil: number;
+  playerWidth: number;
+  playerHeight: number;
 
   // Actions
   setScreen: (screen: GameState['screen']) => void;
   addFace: (face: string) => void;
   selectFace: (index: number) => void;
   setWeapon: (weapon: WeaponType) => void;
+  setPlayerWidth: (width: number) => void;
+  setPlayerHeight: (height: number) => void;
   resetGame: () => void;
   nextStage: () => void;
   syncFromLoop: (data: {
@@ -36,6 +42,8 @@ export interface GameState {
     aCharged: boolean;
     ammo: number;
     shields: number;
+    shieldUntil: number;
+    blockCooldownUntil: number;
   }) => void;
 }
 
@@ -55,6 +63,10 @@ export const useGameStore = create<GameState>((set) => ({
   },
   ammo: 0,
   shields: 0,
+  shieldUntil: 0,
+  blockCooldownUntil: 0,
+  playerWidth: GAME_STRATEGY.PLAYER.WIDTH,
+  playerHeight: GAME_STRATEGY.PLAYER.HEIGHT,
 
   setScreen: (screen) => set({ screen }),
 
@@ -69,6 +81,10 @@ export const useGameStore = create<GameState>((set) => ({
   selectFace: (index) => set({ selectedFaceIndex: index }),
 
   setWeapon: (weapon) => set({ selectedWeapon: weapon }),
+
+  setPlayerWidth: (playerWidth) => set({ playerWidth }),
+
+  setPlayerHeight: (playerHeight) => set({ playerHeight }),
 
   resetGame: () => set({
     stage: 1,
