@@ -277,6 +277,36 @@ canvas {
   pointer-events: auto;
 }
 
+.left-controls,
+.right-controls {
+  pointer-events: auto;
+}
+
+/* Joystick Styles */
+.joystick-base {
+  width: clamp(100px, 20vw, 150px);
+  height: clamp(100px, 20vw, 150px);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+
+.joystick-knob {
+  width: clamp(40px, 8vw, 60px);
+  height: clamp(40px, 8vw, 60px);
+  background: rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+
 .control-btn {
   width: clamp(37.5px, 9vw, 60px);
   height: clamp(37.5px, 9vw, 60px);
@@ -306,33 +336,21 @@ canvas {
 .control-btn.btn-w {
   background: rgba(249, 212, 35, 0.4);
   border-color: rgba(249, 212, 35, 0.5);
-  border-radius: 50%;
-  width: clamp(45px, 11vw, 67.5px);
-  height: clamp(45px, 11vw, 67.5px);
 }
 
 .control-btn.btn-a {
   background: rgba(255, 78, 80, 0.4);
   border-color: rgba(255, 78, 80, 0.5);
-  border-radius: 50%;
-  width: clamp(45px, 11vw, 67.5px);
-  height: clamp(45px, 11vw, 67.5px);
 }
 
 .control-btn.btn-s {
   background: rgba(252, 145, 58, 0.4);
   border-color: rgba(252, 145, 58, 0.5);
-  border-radius: 50%;
-  width: clamp(45px, 11vw, 67.5px);
-  height: clamp(45px, 11vw, 67.5px);
 }
 
 .control-btn.btn-d {
   background: rgba(33, 150, 243, 0.4);
   border-color: rgba(33, 150, 243, 0.5);
-  border-radius: 50%;
-  width: clamp(45px, 11vw, 67.5px);
-  height: clamp(45px, 11vw, 67.5px);
 }
 
 .control-btn.btn-a.charged {
