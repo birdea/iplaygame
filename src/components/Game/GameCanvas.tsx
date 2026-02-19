@@ -42,9 +42,6 @@ export const GameCanvas: React.FC = () => {
     const selectedFaceIndex = useGameStore(s => s.selectedFaceIndex);
 
     // Read-only mirrors from Zustand (driven by syncFromLoop)
-    const storeHP = useGameStore(s => s.hp);
-    const storeScore = useGameStore(s => s.score);
-    const storeStage = useGameStore(s => s.stage);
     const storeIsPaused = useGameStore(s => s.isPaused);
 
     // -----------------------------------------------------------------------
@@ -420,36 +417,6 @@ export const GameCanvas: React.FC = () => {
                 >
                     <Pause size={20} fill="white" />
                 </button>
-
-                <div className="hud-card">
-                    <div className="hud-item">
-                        <span className="hud-label">World</span>
-                        <span className="hud-value">1-{storeStage}</span>
-                    </div>
-
-                    <div className="hud-divider" />
-
-                    <div className="hud-item">
-                        <span className="hud-label">Score</span>
-                        <span className="hud-value" style={{ color: 'var(--accent)' }}>
-                            {String(storeScore).padStart(7, '0')}
-                        </span>
-                    </div>
-
-                    <div className="hud-divider" />
-
-                    <div className="hud-item">
-                        <span className="hud-label">Life</span>
-                        <div className="health-bar-container">
-                            {[...Array(Math.max(3, storeHP))].map((_, i) => (
-                                <div
-                                    key={i}
-                                    className={`health-segment ${i < storeHP ? 'active' : ''}`}
-                                />
-                            ))}
-                        </div>
-                    </div>
-                </div>
             </div>
 
             <MobileControls setKey={setKey} />
