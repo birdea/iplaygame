@@ -33,6 +33,10 @@ export interface GameState {
   setPlayerHeight: (height: number) => void;
   resetGame: () => void;
   nextStage: () => void;
+  isMobile: boolean;
+  setIsMobile: (isMobile: boolean) => void;
+  manualMobileControls: boolean;
+  setManualMobileControls: (manual: boolean) => void;
   syncFromLoop: (data: {
     hp: number;
     score: number;
@@ -67,8 +71,12 @@ export const useGameStore = create<GameState>((set) => ({
   blockCooldownUntil: 0,
   playerWidth: GAME_STRATEGY.PLAYER.WIDTH,
   playerHeight: GAME_STRATEGY.PLAYER.HEIGHT,
+  isMobile: false,
+  manualMobileControls: false,
 
   setScreen: (screen) => set({ screen }),
+  setIsMobile: (isMobile) => set({ isMobile }),
+  setManualMobileControls: (manual) => set({ manualMobileControls: manual }),
 
   addFace: (face) => set((state) => {
     if (state.faces.length >= 10) {

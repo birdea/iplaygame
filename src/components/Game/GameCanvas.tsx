@@ -11,7 +11,7 @@ import { MobileControls } from '../UI/MobileControls';
 import { Pause } from 'lucide-react';
 
 // Extracted game modules
-import { applyVerticalPhysics, applyHorizontalPhysics, aabbOverlap } from './physics';
+import { applyVerticalPhysics, applyHorizontalPhysics } from './physics';
 import { generateStage, spawnBossPlatform } from './stageGenerator';
 import {
     drawBackground, drawBlock, drawDragon, drawPlayer,
@@ -49,6 +49,8 @@ export const GameCanvas: React.FC = () => {
 
     // Read-only mirrors from Zustand (driven by syncFromLoop)
     const storeIsPaused = useGameStore(s => s.isPaused);
+    const isMobile = useGameStore(s => s.isMobile);
+    const manualMobileControls = useGameStore(s => s.manualMobileControls);
 
     // -----------------------------------------------------------------------
     // Single GameLoopState ref (replaces 18 individual refs)
@@ -161,90 +163,114 @@ export const GameCanvas: React.FC = () => {
                 if (!gs.bossActive) gs.cameraX += AUTO_SCROLL_SPEED;
                 const speedMult = gs.powerups.fastRun > Date.now() ? PHYSICS.FAST_RUN_MULTIPLIER : 1;
 
-                // Input handling
+                // Movement Input handling
                 p.vel.x = 0;
-                if (keys.current['ArrowLeft']) {
+                if (keys.current['ArrowLeft'] || keys.current['KeyA_Movement' as any]) { // Support joystick later if needed, but keys are fine
                     p.vel.x = -MOVE_SPEED * speedMult;
                     p.facing = 'left';
                 }
-                if (keys.current['ArrowRight']) {
+                if (keys.current['ArrowRight'] || keys.current['KeyD_Movement' as any]) {
                     p.vel.x = MOVE_SPEED * speedMult;
                     p.facing = 'right';
                 }
 
-                if ((keys.current['ArrowUp'] || keys.current['Space']) && gs.onGround) {
+                // Jump handling (Added KeyE support)
+                if ((keys.current['ArrowUp'] || keys.current['Space'] || keys.current['KeyW'] || keys.current['KeyE']) && gs.onGround) {
                     p.vel.y = JUMP_FORCE;
                     gs.onGround = false;
                 }
 
                 // Crouching
                 const currentStore = useGameStore.getState();
-                const isCrouching = keys.current['ArrowDown'] && gs.onGround;
+                const isCrouching = (keys.current['ArrowDown'] || keys.current['KeyS_Movement' as any]) && gs.onGround;
                 const targetHeight = isCrouching
                     ? currentStore.playerHeight * (GAME_STRATEGY.PLAYER as any).CROUCH_HEIGHT_RATIO
                     : currentStore.playerHeight;
 
                 if (p.height !== targetHeight) {
                     if (isCrouching) {
-                        p.pos.y += (p.height - targetHeight); // Offset Y so it looks like crouching down
+                        p.pos.y += (p.height - targetHeight);
                     } else {
-                        // Check if can stand up (no ceiling)
-                        // For simplicity, just stand up for now, but in a real game we'd check collision above
                         p.pos.y -= (targetHeight - p.height);
                     }
                     p.height = targetHeight;
                 }
                 gs.isCrouching = isCrouching;
 
-                // A key: Shoot Bullet (Special Attack)
-                if (keys.current['KeyA'] && time - gs.lastShootTime > 300 && gs.ammo > 0) {
-                    const isBig = gs.powerups.bigBullet > Date.now();
-                    gs.bullets.push(createBullet(p, isBig));
-                    gs.lastShootTime = time;
-                    gs.ammo--;
-                    playShoot();
+                // --- 5. WEAPON & SHIELD LOGIC ---
+                // Priority: If shield (D) is held, block attacks. 
+                // However, pressing an attack button cancels the shield.
+                const isHoldingD = keys.current['KeyD'];
+                const isPressingAttack = keys.current['KeyA'] || keys.current['KeyS'] || keys.current['KeyF'];
+
+                if (isHoldingD && isPressingAttack) {
+                    keys.current['KeyD'] = false;
                 }
 
-                // S/W keys: Flail Attacks (S=Basic, W=Upper)
-                const CHARGE_DURATION = PLAYER.MEGA_SWING_CHARGE_MS;
-                const isSwingingW = keys.current['KeyW'];
-                const isSwingingS = keys.current['KeyS'];
+                const isShielding = keys.current['KeyD'];
+                gs.isBlocking = isShielding;
 
-                if (isSwingingS || isSwingingW) {
-                    if (isSwingingW) p.attackDir = 'up';
-                    else p.attackDir = p.facing || 'right';
-
-                    if (gs.aChargeStart === 0) {
-                        gs.aChargeStart = time;
-                    } else if (time - gs.aChargeStart >= CHARGE_DURATION) {
-                        gs.aCharged = true;
+                if (isShielding) {
+                    // Holding D: Use shield resource if available
+                    if (time - gs.lastShieldTime > 200) {
+                        if (gs.shields > 0) {
+                            if (actions.useShield()) {
+                                gs.lastShieldTime = time;
+                            }
+                        } else {
+                            // If no shields left, default to per-frame block state (isBlocking=true)
+                            // activateBlock() is usually for parry window, but we want holdable shield here.
+                        }
                     }
                 } else {
-                    if (gs.aCharged) {
-                        // RELEASE MEGA SWING (Direction depends on what was being held)
-                        // Note: p.attackDir should already be set above while holding
-                        gs.lastMegaSwingTime = time;
-                        gs.aCharged = false;
-                    } else if (gs.aChargeStart !== 0) {
-                        // Normal swing if released before full charge
-                        if (time - gs.lastSwingTime > PLAYER.ATTACK_COOLDOWN_MS) {
+                    // Weapon Logic (only if not shielding)
+                    // A key: Shoot Bullet
+                    if (keys.current['KeyA'] && time - gs.lastShootTime > 300 && gs.ammo > 0) {
+                        const isBig = gs.powerups.bigBullet > Date.now();
+                        gs.bullets.push(createBullet(p, isBig));
+                        gs.lastShootTime = time;
+                        gs.ammo--;
+                        playShoot();
+                    }
+
+                    // S/F keys: Flail Attacks (S=Basic, F=Upper)
+                    const CHARGE_DURATION = PLAYER.MEGA_SWING_CHARGE_MS;
+                    const isChargingS = keys.current['KeyS'];
+                    const isSwingingF = keys.current['KeyF'];
+
+                    // Auto-fire logic
+                    if (time - gs.lastSwingTime > PLAYER.ATTACK_COOLDOWN_MS) {
+                        const nearestMonster = gs.entities.find(e => {
+                            if (e.type !== 'monster' && e.type !== 'boss') return false;
+                            const dx = Math.abs(e.pos.x - p.pos.x);
+                            return dx < PLAYER.CLUB_RANGE;
+                        });
+
+                        if (nearestMonster) {
+                            p.attackDir = p.facing || 'right';
                             gs.lastSwingTime = time;
                         }
                     }
-                    gs.aChargeStart = 0;
-                    gs.aCharged = false;
-                }
 
-                // D key: Use Shield (Defense) or Parry
-                if (keys.current['KeyD'] && time - gs.lastShieldTime > 500) {
-                    if (gs.shields > 0) {
-                        if (actions.useShield()) {
-                            gs.lastShieldTime = time;
+                    if (isChargingS || isSwingingF) {
+                        p.attackDir = isSwingingF ? 'up' : (p.facing || 'right');
+                        if (gs.aChargeStart === 0) {
+                            gs.aChargeStart = time;
+                        } else if (time - gs.aChargeStart >= CHARGE_DURATION) {
+                            gs.aCharged = true;
                         }
                     } else {
-                        if (actions.activateBlock()) {
-                            gs.lastShieldTime = time;
+                        if (gs.aCharged) {
+                            gs.lastMegaSwingTime = time;
+                            gs.aCharged = false;
+                        } else if (gs.aChargeStart !== 0) {
+                            // Manual swing if released before charge
+                            if (time - gs.lastSwingTime > PLAYER.ATTACK_COOLDOWN_MS) {
+                                gs.lastSwingTime = time;
+                            }
                         }
+                        gs.aChargeStart = 0;
+                        gs.aCharged = false;
                     }
                 }
 
@@ -405,11 +431,65 @@ export const GameCanvas: React.FC = () => {
                         boss, p, gs.bossTactics, time, gs.stage, gameActiveRef, gs.cameraX,
                         (bullet: Entity) => { gs.bullets.push(bullet); },
                     );
-                    // Boss-player collision
-                    if (aabbOverlap(p, boss, BOSS.HITBOX_RATIO)) {
+
+                    // Boss-player collision: Only limbs (arms, legs, tail tip)
+                    const { BOSS } = GAME_STRATEGY;
+                    const center = { x: boss.pos.x + boss.width / 2, y: boss.pos.y + boss.height / 2 };
+                    const facingVal = gs.bossTactics.visualFacing;
+                    const scale = Math.min(boss.width, boss.height) / 300;
+                    const pCenterX = p.pos.x + p.width / 2;
+                    const pCenterY = p.pos.y + p.height / 2;
+
+                    const checkLimbHit = (localX: number, localY: number, radius: number) => {
+                        const worldX = center.x + (localX * facingVal) * scale;
+                        const worldY = center.y + (localY) * scale;
+                        const dx = worldX - pCenterX;
+                        const dy = worldY - pCenterY;
+                        return Math.sqrt(dx * dx + dy * dy) < (radius * scale + Math.min(p.width, p.height) * 0.4);
+                    };
+
+                    let limbHit = false;
+                    const armCount = BOSS.LIMBS.ARMS_BASE + (gs.stage - 1) * BOSS.LIMBS.ARMS_PER_STAGE;
+                    const legCount = BOSS.LIMBS.LEGS_BASE + (gs.stage - 1) * BOSS.LIMBS.LEGS_PER_STAGE;
+
+                    // Arms
+                    for (let i = 0; i < armCount; i++) {
+                        const angle_base = (i / armCount) * Math.PI - Math.PI / 2;
+                        const ax = Math.cos(angle_base) * 30;
+                        const ay = Math.sin(angle_base) * 60;
+                        let curX = 0, curY = 0;
+                        const tdx = p.pos.x - (center.x + ax * scale * facingVal);
+                        const tdy = p.pos.y - (center.y + ay * scale);
+                        const baseAngle = Math.atan2(tdy, tdx * facingVal);
+                        for (let s = 0; s < BOSS.LIMBS.SEGMENT_COUNT; s++) {
+                            const angle = baseAngle + Math.sin(time / 1000 + i * 0.5 + s * 0.3) * 0.4;
+                            curX += Math.cos(angle) * BOSS.LIMBS.SEGMENT_LENGTH;
+                            curY += Math.sin(angle) * BOSS.LIMBS.SEGMENT_LENGTH;
+                        }
+                        if (checkLimbHit(ax + curX, ay + curY, 25)) limbHit = true;
+                    }
+
+                    // Legs
+                    if (!limbHit) {
+                        for (let i = 0; i < legCount; i++) {
+                            const lx = -100 + i * (40 / Math.max(1, legCount - 1));
+                            const ly = 60;
+                            let curX = 0, curY = 0;
+                            const tdx = p.pos.x - (center.x + lx * scale * facingVal);
+                            const tdy = p.pos.y - (center.y + ly * scale);
+                            const baseAngle = Math.atan2(tdy, tdx * facingVal);
+                            for (let s = 0; s < BOSS.LIMBS.SEGMENT_COUNT; s++) {
+                                const angle = baseAngle + Math.sin(time / 1000 + (i + 10) * 0.5 + s * 0.3) * 0.2;
+                                curX += Math.cos(angle) * BOSS.LIMBS.SEGMENT_LENGTH;
+                                curY += Math.sin(angle) * BOSS.LIMBS.SEGMENT_LENGTH;
+                            }
+                            if (checkLimbHit(lx + curX, ly + curY, 25)) limbHit = true;
+                        }
+                    }
+                    if (limbHit) {
                         if (actions.takeDamage(1)) {
                             p.pos.x -= PLAYER.KNOCKBACK_DISTANCE * 2;
-                            playPlayerHurt(); // 으악! — 보스에 직접 충돌
+                            playPlayerHurt();
                         }
                     }
                 }
@@ -583,7 +663,7 @@ export const GameCanvas: React.FC = () => {
                 </button>
             </div>
 
-            <MobileControls setKey={setKey} />
+            {(isMobile || manualMobileControls) && <MobileControls setKey={setKey} />}
 
             {storeIsPaused && (
                 <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[2000] p-4">

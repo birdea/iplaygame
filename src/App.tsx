@@ -105,6 +105,19 @@ const App: React.FC = () => {
     }
   }, [screen]);
 
+  // Mobile Detection
+  const { setIsMobile } = useGameStore();
+  useEffect(() => {
+    const checkMobile = () => {
+      const isTouch = window.matchMedia('(pointer: coarse)').matches;
+      const isSmall = window.innerWidth <= 1024;
+      setIsMobile(isTouch || isSmall);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, [setIsMobile]);
+
   return (
     <div className="h-screen w-screen overflow-hidden relative bg-dark">
       <div className="background-overlay" />

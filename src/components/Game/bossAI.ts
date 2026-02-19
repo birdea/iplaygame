@@ -162,9 +162,9 @@ export function updateBoss(
         tactics.lastAttackTime = time;
         tactics.attackDuration = 1000;
 
-        // Difficulty scales with stage
-        const baseCount = BOSS.BULLET_COUNT_BASE;
-        const bulletCount = Math.floor(baseCount * Math.pow(BOSS.BULLET_COUNT_SCALING, stage - 1)) + Math.floor(Math.random() * stage);
+        // Difficulty scales with stage: Stage 1 = 1~3 random, +30% per stage
+        const baseRandom = 1 + Math.random() * 2.99; // 1 to 3
+        const bulletCount = Math.floor(baseRandom * Math.pow(BOSS.BULLET_COUNT_SCALING, stage - 1));
 
         // Randomly pick between 7 o'clock and 11 o'clock direction for this wave
         // 11 o'clock -> Up-Left (-30 deg from left), 7 o'clock -> Down-Left (+30 deg from left)

@@ -180,7 +180,7 @@ export function drawDragon(
         const baseAngle = Math.atan2(dy, dx * facingVal);
 
         for (let s = 0; s < segmentCount; s++) {
-            const phase = time / 500 + index * 0.5 + s * 0.3;
+            const phase = time / 1000 + index * 0.5 + s * 0.3;
             const wave = Math.sin(phase) * (isLeg ? 0.2 : 0.4);
             const angle = baseAngle + wave;
 
@@ -238,6 +238,50 @@ export function drawDragon(
         const ly = 60;
         drawLimb(lx, ly, tX, tY, true, i + 10);
     }
+
+    // Draw Tail (Rear of the body)
+    const tailX = -110;
+    const tailY = 20;
+    // Tail segment config
+    const tsCount = (BOSS.LIMBS as any).TAIL_SEGMENT_COUNT || 5;
+    const tsLen = (BOSS.LIMBS as any).TAIL_SEGMENT_LENGTH || 25;
+
+    ctx.save();
+    ctx.translate(tailX, tailY);
+    let ctxX = 0, ctxY = 0;
+    const tailBaseAngle = Math.PI; // Pointing backwards
+    for (let s = 0; s < tsCount; s++) {
+        const phase = time / 800 + s * 0.4;
+        const wave = Math.sin(phase) * 0.5;
+        const angle = tailBaseAngle + wave;
+        ctx.save();
+        ctx.translate(ctxX, ctxY);
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.lineTo(tsLen, 0);
+        ctx.strokeStyle = strokeColor;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(0, 0, 10 - s * 1.5, 0, Math.PI * 2);
+        ctx.fillStyle = bodyColor;
+        ctx.fill(); ctx.stroke();
+        ctx.restore();
+        ctxX += Math.cos(angle) * tsLen;
+        ctxY += Math.sin(angle) * tsLen;
+    }
+    // Tail Tip
+    ctx.save();
+    ctx.translate(ctxX, ctxY);
+    ctx.beginPath();
+    ctx.arc(0, 0, 12, 0, Math.PI * 2);
+    ctx.fillStyle = bodyColor; // Matches body now as it's safe
+    ctx.fill(); ctx.stroke();
+    // Spike at the tip
+    ctx.beginPath();
+    ctx.moveTo(12, 0); ctx.lineTo(25, 5); ctx.lineTo(25, -5); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+    ctx.restore();
 
     const drawDiamond = (dx: number, dy: number, s: number, angle: number) => {
         ctx.save();

@@ -200,7 +200,8 @@ export const Settings: React.FC = () => {
         faces, selectedFaceIndex, selectedWeapon,
         playerWidth, playerHeight,
         addFace, selectFace, setWeapon, setScreen,
-        setPlayerWidth, setPlayerHeight
+        setPlayerWidth, setPlayerHeight,
+        manualMobileControls, setManualMobileControls
     } = useGameStore();
     const webcamRef = useRef<Webcam>(null);
     const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -266,6 +267,24 @@ export const Settings: React.FC = () => {
                             className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500 w-32"
                         />
                     </div>
+                </div>
+            </div>
+
+            {/* Mobile Controls Toggle */}
+            <div className="glass-morphism p-4 md:p-6 mb-6">
+                <h3 className="text-xl font-semibold mb-3">Environment</h3>
+                <div className="flex items-center justify-between">
+                    <div>
+                        <p className="font-bold">Manual Mobile Controls</p>
+                        <p className="text-sm text-white/50">Show on-screen controls even on desktop</p>
+                    </div>
+                    <button
+                        onClick={() => setManualMobileControls(!manualMobileControls)}
+                        className={`px-6 py-2 rounded-full font-bold transition-all ${manualMobileControls ? 'bg-primary text-white' : 'bg-white/10 text-white/40'
+                            }`}
+                    >
+                        {manualMobileControls ? 'ENABLED' : 'DISABLED'}
+                    </button>
                 </div>
             </div>
 
