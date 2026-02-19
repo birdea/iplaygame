@@ -28,8 +28,8 @@ export const GAME_STRATEGY = {
 
     // --- PLAYER TUNING ---
     PLAYER: {
-        WIDTH: 45,
-        HEIGHT: 70,
+        WIDTH: 35,
+        HEIGHT: 60,
         INITIAL_HP: 5,
         MAX_HP_LIMIT: 20,
         INVINCIBILITY_DURATION_MS: 2000,
@@ -123,9 +123,9 @@ export const GAME_STRATEGY = {
         ARENA_INSET_RIGHT: 0,
         /** Fire attack cooldown: 3500 / stage (ms) */
         FIRE_COOLDOWN_BASE_MS: 3500,
-        /** Number of bullets in a fire wave: 6 * (1.2 ^ stage-1) */
-        BULLET_COUNT_BASE: 6,
-        BULLET_COUNT_SCALING: 1.2,
+        /** Number of bullets in a fire wave: randomized around 1~3 at stage 1, scales by 1.3x per stage */
+        BULLET_COUNT_BASE: 2,
+        BULLET_COUNT_SCALING: 1.3,
         /** Boss projectile speed: (8 + stage * 0.5) */
         BULLET_SPEED_BASE: 8,
         /** Boss collision hitbox ratio */
@@ -140,12 +140,14 @@ export const GAME_STRATEGY = {
         RETREAT_CHANCE: 0.05,
         /** Limbs configuration */
         LIMBS: {
-            ARMS_BASE: 2,
+            ARMS_BASE: 0,
             ARMS_PER_STAGE: 1,
-            LEGS_BASE: 2,
+            LEGS_BASE: 0,
             LEGS_PER_STAGE: 1,
             SEGMENT_COUNT: 3,
             SEGMENT_LENGTH: 35,
+            TAIL_SEGMENT_COUNT: 5,
+            TAIL_SEGMENT_LENGTH: 25,
         },
     },
 

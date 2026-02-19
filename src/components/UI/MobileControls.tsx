@@ -6,18 +6,6 @@ interface MobileControlsProps {
     setKey: (code: string, isPressed: boolean) => void;
 }
 
-const Button = ({ code, label, className = "", onHandlePress }: { code: string, label: React.ReactNode, className?: string, onHandlePress: (code: string, isPressed: boolean) => void }) => (
-    <button
-        onPointerDown={(e) => { e.preventDefault(); onHandlePress(code, true); }}
-        onPointerUp={(e) => { e.preventDefault(); onHandlePress(code, false); }}
-        onPointerCancel={(e) => { e.preventDefault(); onHandlePress(code, false); }}
-        onContextMenu={(e) => e.preventDefault()}
-        className={`control-btn ${className}`}
-    >
-        {label}
-    </button>
-);
-
 const Joystick = ({ onMove }: { onMove: (x: number, y: number) => void }) => {
     const [dragging, setDragging] = useState(false);
     const [knobPos, setKnobPos] = useState({ x: 0, y: 0 });
@@ -84,6 +72,29 @@ const Joystick = ({ onMove }: { onMove: (x: number, y: number) => void }) => {
 
 export const MobileControls: React.FC<MobileControlsProps> = ({ setKey }) => {
     const aCharged = useGameStore(s => s.aCharged);
+    const [isPortrait, setIsPortrait] = useState(window.innerHeight > window.innerWidth);
+    const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
+
+    useEffect(() => {
+        const handleResize = () => setIsPortrait(window.innerHeight > window.innerWidth);
+        const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+        window.addEventListener('resize', handleResize);
+        document.addEventListener('fullscreenchange', handleFsChange);
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            document.removeEventListener('fullscreenchange', handleFsChange);
+        };
+    }, []);
+
+    const handleFullscreen = () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+            });
+        } else {
+            document.exitFullscreen();
+        }
+    };
 
     const handlePress = (code: string, isPressed: boolean) => {
         setKey(code, isPressed);
@@ -115,26 +126,29 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ setKey }) => {
     };
 
     return (
-        <div className="mobile-controls">
-            {/* Left: Joystick */}
-            <div className="left-controls">
-                <Joystick onMove={handleJoystick} />
-            </div>
-
-            {/* Center: HUD */}
-            <HUD />
-
-            {/* Right: Action Buttons (WASD) */}
-            <div className="right-controls">
-                <div className="wasd-pad">
-                    <div />
-                    <Button code="KeyW" label={<span style={{ fontSize: '0.8rem' }}>UP</span>} className="btn-w" onHandlePress={handlePress} />
-                    <div />
-                    <Button code="KeyA" label={<span style={{ fontSize: '0.8rem' }}>GUN</span>} className="btn-a" onHandlePress={handlePress} />
-                    <Button code="KeyS" label={<span style={{ fontSize: '0.8rem' }}>CLUB</span>} className={`btn-s ${aCharged ? 'charged' : ''}`} onHandlePress={handlePress} />
-                    <Button code="KeyD" label={<span style={{ fontSize: '0.8rem' }}>SHIELD</span>} className="btn-d" onHandlePress={handlePress} />
+        <>
+            {isPortrait && (
+                <div className="portrait-warning">
+                    <div className="warning-content">
+                        <span>📱</span>
+                        <p>Better in Landscape!</p>
+                    </div>
                 </div>
+            )}
+
+            <button className="fs-toggle" onClick={handleFullscreen}>
+                {isFullscreen ? 'EXIT FS' : 'FULLSCREEN'}
+            </button>
+
+            <div className="mobile-controls">
+                {/* Left: Joystick */}
+                <div className="left-controls">
+                    <Joystick onMove={handleJoystick} />
+                </div>
+
+                {/* Right Bottom: Unified HUD with Integrated Action Buttons */}
+                <HUD onHandlePress={handlePress} aCharged={aCharged} />
             </div>
-        </div>
+        </>
     );
 };
