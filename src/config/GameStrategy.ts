@@ -10,6 +10,7 @@ export const GAME_STRATEGY = {
     // --- GENERAL ---
     GENERAL: {
         TITLE: 'KIDS ADVENTURE',
+        VERSION: 'v1.0.1',
     },
 
     // --- PHYSICS & MOVEMENT ---

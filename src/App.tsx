@@ -20,7 +20,7 @@ const VictoryView: React.FC = () => {
       animate={{ opacity: 1 }}
       className="relative w-full h-full flex flex-col items-center justify-center gap-6 md:gap-8 bg-black/80 backdrop-blur-md"
     >
-      <div className="relative z-10 flex flex-col items-center gap-6 md:gap-8 p-10 glass-morphism shadow-2xl">
+      <div className="relative z-10 flex flex-col items-center gap-6 md:gap-8 p-5 glass-morphism shadow-2xl">
         <h2 className="responsive-header font-black text-accent drop-shadow-[0_5px_15px_rgba(249,212,35,0.4)]">{UI.VICTORY_TITLE}</h2>
         <div className="flex flex-col items-center gap-2">
           <p className="text-xl md:text-3xl text-white font-bold tracking-wider">{UI.STAGE_CLEAR_MESSAGE(stage)}</p>
@@ -79,7 +79,7 @@ const App: React.FC = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="w-full h-full flex items-center justify-center"
+              className="w-full h-full"
             >
               <Menu />
             </motion.div>
@@ -91,7 +91,7 @@ const App: React.FC = () => {
               initial={{ opacity: 0, x: 100 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -100 }}
-              className="w-full h-full flex items-center justify-center"
+              className="absolute inset-0 overflow-y-auto pointer-events-auto z-50"
             >
               <Settings />
             </motion.div>
