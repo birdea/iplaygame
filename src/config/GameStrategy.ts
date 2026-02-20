@@ -141,10 +141,6 @@ export const GAME_STRATEGY = {
         RETREAT_CHANCE: 0.05,
         /** Limbs configuration */
         LIMBS: {
-            ARMS_BASE: 0,
-            ARMS_PER_STAGE: 1,
-            LEGS_BASE: 0,
-            LEGS_PER_STAGE: 1,
             SEGMENT_COUNT: 3,
             SEGMENT_LENGTH: 35,
             TAIL_SEGMENT_COUNT: 5,

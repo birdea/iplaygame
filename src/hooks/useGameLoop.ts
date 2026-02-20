@@ -308,7 +308,13 @@ export function useGameLoop() {
                 gs.effects, gs.groundItems, gs.cameraX, effectiveRange,
                 isMegaSwing ? PLAYER.MEGA_SWING_DAMAGE_MULT : 1,
                 onBossHit,
-                () => { gs.bossActive ? playBossHit() : playHitEnemy(); },
+                () => {
+                    if (gs.bossActive) {
+                        playBossHit();
+                    } else {
+                        playHitEnemy();
+                    }
+                },
                 () => playStompEnemy(),
                 () => playPlayerHurt(),
                 isMegaSwing ? 700 : 500,
@@ -347,41 +353,31 @@ export function useGameLoop() {
                 };
 
                 let limbHit = false;
-                const armCount = bossConst.LIMBS.ARMS_BASE + (gs.stage - 1) * bossConst.LIMBS.ARMS_PER_STAGE;
-                const legCount = bossConst.LIMBS.LEGS_BASE + (gs.stage - 1) * bossConst.LIMBS.LEGS_PER_STAGE;
+                const tx = -110;
+                const ty = 20;
+                const tsCount = bossConst.LIMBS.TAIL_SEGMENT_COUNT;
+                const tsLen = bossConst.LIMBS.TAIL_SEGMENT_LENGTH;
+                const tailBaseAngle = Math.PI;
 
-                for (let i = 0; i < armCount; i++) {
-                    const angle_base = (i / armCount) * Math.PI - Math.PI / 2;
-                    const ax = Math.cos(angle_base) * 30;
-                    const ay = Math.sin(angle_base) * 60;
-                    let curX = 0, curY = 0;
-                    const tdx = p.pos.x - (center.x + ax * scale * facingVal);
-                    const tdy = p.pos.y - (center.y + ay * scale);
-                    const baseAngle = Math.atan2(tdy, tdx * facingVal);
-                    for (let s = 0; s < bossConst.LIMBS.SEGMENT_COUNT; s++) {
-                        const angle = baseAngle + Math.sin(time / 1000 + i * 0.5 + s * 0.3) * 0.4;
-                        curX += Math.cos(angle) * bossConst.LIMBS.SEGMENT_LENGTH;
-                        curY += Math.sin(angle) * bossConst.LIMBS.SEGMENT_LENGTH;
+                const tipScale = (gs.stage > 1 ? (1 + (gs.stage - 2) * 0.2) : 1) * 1.5;
+
+                if (gs.stage > 1) {
+                    let curX = tx, curY = ty;
+                    for (let s = 0; s < tsCount; s++) {
+                        const phase = time / 800 + s * 0.4;
+                        const wave = Math.sin(phase) * 0.5;
+                        const angle = tailBaseAngle + wave;
+
+                        curX += Math.cos(angle) * tsLen;
+                        curY += Math.sin(angle) * tsLen;
                     }
-                    if (checkLimbHit(ax + curX, ay + curY, 25)) limbHit = true;
-                }
 
-                if (!limbHit) {
-                    for (let i = 0; i < legCount; i++) {
-                        const lx = -100 + i * (40 / Math.max(1, legCount - 1));
-                        const ly = 60;
-                        let curX = 0, curY = 0;
-                        const tdx = p.pos.x - (center.x + lx * scale * facingVal);
-                        const tdy = p.pos.y - (center.y + ly * scale);
-                        const baseAngle = Math.atan2(tdy, tdx * facingVal);
-                        for (let s = 0; s < bossConst.LIMBS.SEGMENT_COUNT; s++) {
-                            const angle = baseAngle + Math.sin(time / 1000 + (i + 10) * 0.5 + s * 0.3) * 0.2;
-                            curX += Math.cos(angle) * bossConst.LIMBS.SEGMENT_LENGTH;
-                            curY += Math.sin(angle) * bossConst.LIMBS.SEGMENT_LENGTH;
-                        }
-                        if (checkLimbHit(lx + curX, ly + curY, 25)) limbHit = true;
+                    // Only check hitbox at the tip (Policy 1)
+                    if (checkLimbHit(curX, curY, 25 * tipScale)) {
+                        limbHit = true;
                     }
                 }
+
                 if (limbHit) {
                     if (actions.takeDamage(1)) {
                         p.pos.x -= PLAYER.KNOCKBACK_DISTANCE * 2;
