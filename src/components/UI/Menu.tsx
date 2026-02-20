@@ -174,6 +174,18 @@ export const Menu: React.FC = () => {
                     <SettingsIcon size={24} /> SETTINGS
                 </motion.button>
             </div>
+
+            {/* Version Name */}
+            <div style={{
+                position: 'absolute',
+                bottom: '1rem',
+                left: '1rem',
+                fontSize: '0.8rem',
+                color: 'rgba(255,255,255,0.4)',
+                fontWeight: 600
+            }}>
+                {GAME_STRATEGY.GENERAL.VERSION}
+            </div>
         </div>
     );
 };
