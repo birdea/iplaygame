@@ -1,4 +1,4 @@
-import { GAME_STRATEGY } from '../components/Game/GameStrategy';
+import { GAME_STRATEGY } from '../config/GameStrategy';
 
 export const UNIT_SIZE = 50; // 1m = 50px
 export const getStageLength = (stage: number) =>

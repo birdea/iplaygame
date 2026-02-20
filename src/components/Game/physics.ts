@@ -1,6 +1,6 @@
 import type { Entity, Block } from '../../types';
 import { GRAVITY } from '../../constants';
-import { GAME_STRATEGY } from './GameStrategy';
+import { GAME_STRATEGY } from '../../config/GameStrategy';
 
 const { COLLISION } = GAME_STRATEGY;
 

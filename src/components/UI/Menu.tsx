@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Settings as SettingsIcon } from 'lucide-react';
 import { useGameStore } from '../../store/useGameStore';
-import { GAME_STRATEGY } from '../Game/GameStrategy';
+import { GAME_STRATEGY } from '../../config/GameStrategy';
 
 // 인트로 시퀀스: main_logo.jpg (2초) → dragon_img.jpg (2초) → dragon_intro.mp4 (재생 완료) → 반복
 type IntroPhase = 'logo1' | 'logo2' | 'video';

@@ -2,7 +2,7 @@ import type { Entity, GroundItem, Effect } from '../../types';
 import { PLAYER_WIDTH, PLAYER_HEIGHT, INVINCIBILITY_DURATION, SHIELD_DURATION } from '../../constants';
 import type { BossTactics } from './bossAI';
 import { createBossTactics } from './bossAI';
-import { GAME_STRATEGY } from './GameStrategy';
+import { GAME_STRATEGY } from '../../config/GameStrategy';
 
 // ---------------------------------------------------------------------------
 // GameLoopState: Single source of truth for all mutable game-loop state
@@ -92,7 +92,7 @@ export function createInitialGameState(stage: number = 1): GameLoopState {
         aChargeStart: 0,
         aCharged: false,
         gameActive: true,
-        hp: 3,
+        hp: GAME_STRATEGY.PLAYER.INITIAL_HP,
         score: 0,
         ammo: 0,
         shields: 0,
@@ -128,68 +128,82 @@ export interface GameActions {
 export function createGameActions(
     gs: GameLoopState,
     syncFn: () => void,
-): GameActions {
-    return {
+): GameActionsWithFlush {
+    let dirty = false;
+
+    const markDirty = () => { dirty = true; };
+
+    const actions: GameActions & { flushSync: () => void } = {
         takeDamage(amount: number = 1): boolean {
             const now = Date.now();
             if (now < gs.invincibleUntil || now < gs.shieldUntil) return false;
 
             if (gs.isBlocking) {
                 gs.isBlocking = false;
-                gs.blockCooldownUntil = now + (GAME_STRATEGY.PLAYER as any).BLOCK_COOLDOWN_MS;
+                gs.blockCooldownUntil = now + GAME_STRATEGY.PLAYER.BLOCK_COOLDOWN_MS;
                 gs.invincibleUntil = now + 500; // Brief grace period after block
-                syncFn();
+                markDirty();
                 return false; // Blocked!
             }
 
             gs.hp -= amount;
             gs.invincibleUntil = now + INVINCIBILITY_DURATION;
             gs.lastDamageTime = now;
-            syncFn();
+            markDirty();
             return true;
         },
         addScore(points: number): void {
             gs.score += points;
-            syncFn();
+            markDirty();
         },
         setHP(hp: number): void {
             gs.hp = hp;
-            syncFn();
+            markDirty();
         },
         addAmmo(amount: number): void {
             gs.ammo += amount;
-            syncFn();
+            markDirty();
         },
         addShields(amount: number): void {
             gs.shields += amount;
-            syncFn();
+            markDirty();
         },
         useShield(): boolean {
             const now = Date.now();
             if (gs.shields > 0 && now > gs.shieldUntil) {
                 gs.shields--;
                 gs.shieldUntil = now + SHIELD_DURATION;
-                syncFn();
+                markDirty();
                 return true;
             }
             return false;
         },
         activatePowerup(type: 'bigBullet' | 'fastRun', duration: number): void {
             gs.powerups[type] = Date.now() + duration;
-            syncFn();
+            markDirty();
         },
         togglePaused(paused?: boolean): void {
             gs.isPaused = paused !== undefined ? paused : !gs.isPaused;
-            syncFn();
+            markDirty();
         },
         activateBlock(): boolean {
             const now = Date.now();
             if (!gs.isBlocking && now > gs.blockCooldownUntil) {
                 gs.isBlocking = true;
-                syncFn();
+                markDirty();
                 return true;
             }
             return false;
-        }
+        },
+        flushSync(): void {
+            if (dirty) {
+                syncFn();
+                dirty = false;
+            }
+        },
     };
+
+    return actions;
 }
+
+export type GameActionsWithFlush = GameActions & { flushSync: () => void };

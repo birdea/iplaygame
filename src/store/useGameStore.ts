@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { GAME_STRATEGY } from '../components/Game/GameStrategy';
+import { GAME_STRATEGY } from '../config/GameStrategy';
 
 export type WeaponType = 'sword' | 'club';
 
@@ -58,7 +58,7 @@ export const useGameStore = create<GameState>((set) => ({
   selectedWeapon: 'sword',
   stage: 1,
   score: 0,
-  hp: 3,
+  hp: GAME_STRATEGY.PLAYER.INITIAL_HP,
   isPaused: false,
   aCharged: false,
   powerups: {
@@ -97,7 +97,7 @@ export const useGameStore = create<GameState>((set) => ({
   resetGame: () => set({
     stage: 1,
     score: 0,
-    hp: 3,
+    hp: GAME_STRATEGY.PLAYER.INITIAL_HP,
     screen: 'game',
     isPaused: false,
     powerups: { bigBullet: 0, fastRun: 0 },
