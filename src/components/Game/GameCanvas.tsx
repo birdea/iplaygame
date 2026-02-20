@@ -103,7 +103,7 @@ export const GameCanvas: React.FC = () => {
                     const mFace = monsterFaces.current[m.monsterType === 'skinny' ? 0 : m.monsterType === 'fat' ? 1 : 2];
                     drawMonster(ctx, e, m, time, mFace);
                 } else if (e.type === 'boss') {
-                    drawDragon(ctx, e.pos.x, e.pos.y, e.width, e.height, time, gs.bossTactics.state, gs.stage, gs.bossTactics.visualFacing, p.pos);
+                    drawDragon(ctx, e.pos.x, e.pos.y, e.width, e.height, time, gs.bossTactics.state, gs.stage, gs.bossTactics.visualFacing);
                     drawBossHPBar(ctx, e);
                 }
             });
