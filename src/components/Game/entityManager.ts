@@ -1,51 +1,18 @@
 import type { Entity, GroundItem, Effect } from '../../types';
-import { BULLET_SPEED, GRAVITY } from '../../constants';
+import { GRAVITY } from '../../constants';
 import { aabbOverlap } from './physics';
-import { createMonster } from './stageGenerator';
-import { GAME_STRATEGY } from './GameStrategy';
+import { GAME_STRATEGY } from '../../config/GameStrategy';
+import {
+    createMonster,
+    spawnGroundItem,
+    getRandomItemType,
+    spawnSparks,
+} from './entityFactories';
 
 const { ITEMS, SCORE, PLAYER, BOSS } = GAME_STRATEGY;
 
-/** Create a player bullet */
-export function createBullet(player: Entity, isBigBullet: boolean): Entity {
-    return {
-        id: `bullet-${Date.now()}-${Math.random()}`,
-        pos: { x: player.pos.x + player.width, y: player.pos.y + 20 },
-        vel: { x: BULLET_SPEED * (isBigBullet ? 1.2 : 1), y: 0 },
-        width: isBigBullet ? 30 : 12,
-        height: isBigBullet ? 30 : 12,
-        type: 'bullet',
-        damage: isBigBullet ? 2 : 1,
-    };
-}
-
-/** Spawn a ground item that pops out of a question block */
-export function spawnGroundItem(
-    block: Entity,
-    powerup: GroundItem['powerup'],
-): GroundItem {
-    const goLeft = Math.random() < 0.5;
-    return {
-        id: `item-${Date.now()}-${Math.random()}`,
-        pos: { x: block.pos.x + block.width / 2 - 12, y: block.pos.y - 28 },
-        vel: { x: goLeft ? -ITEMS.ROAM_SPEED : ITEMS.ROAM_SPEED, y: ITEMS.POP_VELOCITY_Y },
-        width: 24 * (ITEMS.SIZE_MULTIPLIER || 1),
-        height: 24 * (ITEMS.SIZE_MULTIPLIER || 1),
-        powerup,
-        spawnedAt: Date.now(),
-        isPopping: true,
-    };
-}
-
-export function getRandomItemType(): 'bigBullet' | 'fastRun' | 'hp' | 'shield' | 'ammo' {
-    const rand = Math.random();
-    const { BIG_BULLET, FAST_RUN, SHIELD, AMMO } = ITEMS.DROP_WEIGHTS;
-    if (rand < BIG_BULLET) return 'bigBullet';
-    if (rand < BIG_BULLET + FAST_RUN) return 'fastRun';
-    if (rand < BIG_BULLET + FAST_RUN + SHIELD) return 'shield';
-    if (rand < BIG_BULLET + FAST_RUN + SHIELD + AMMO) return 'ammo';
-    return 'hp';
-}
+// Re-export factories so existing consumers don't break
+export { createBullet, spawnGroundItem, getRandomItemType } from './entityFactories';
 
 export interface GroundItemUpdateResult {
     groundItems: GroundItem[];
@@ -116,24 +83,6 @@ export function updateGroundItems(
     }
 
     return { groundItems: surviving, collected };
-}
-
-/** Helper to spawn impact sparks */
-function spawnSparks(effects: Effect[], x: number, y: number, color: string = '#FF9800') {
-    const count = 5 + Math.floor(Math.random() * 5);
-    for (let i = 0; i < count; i++) {
-        effects.push({
-            id: `effect-${Date.now()}-${Math.random()}`,
-            pos: { x, y },
-            vel: {
-                x: (Math.random() - 0.5) * 10,
-                y: (Math.random() - 0.5) * 10,
-            },
-            life: 1.0,
-            color,
-            size: 2 + Math.random() * 4,
-        });
-    }
 }
 
 export interface MonsterUpdateResult {

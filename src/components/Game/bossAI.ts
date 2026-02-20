@@ -30,7 +30,7 @@ export function createBossTactics(): BossTactics {
     };
 }
 
-import { GAME_STRATEGY } from './GameStrategy';
+import { GAME_STRATEGY } from '../../config/GameStrategy';
 
 const { BOSS, PHYSICS } = GAME_STRATEGY;
 

@@ -4,7 +4,8 @@ import { Menu } from './components/UI/Menu';
 import { Settings } from './components/UI/Settings';
 import { GameCanvas } from './components/Game/GameCanvas';
 import { motion, AnimatePresence } from 'framer-motion';
-import { GAME_STRATEGY } from './components/Game/GameStrategy';
+import { GAME_STRATEGY } from './config/GameStrategy';
+import { useBGM } from './hooks/useBGM';
 
 const { UI } = GAME_STRATEGY;
 
@@ -52,58 +53,7 @@ const VictoryView: React.FC = () => {
 const App: React.FC = () => {
   const { screen, setScreen, resetGame } = useGameStore();
 
-  const playlist = React.useMemo(() => ['/bgm_001.ogg', '/bgm_002.ogg', '/bgm_003.ogg', '/bgm_004.ogg', '/bgm_005.ogg'], []);
-  const shuffledRef = React.useRef<string[]>([]);
-  const currentIndexRef = React.useRef(0);
-  const audioRef = React.useRef<HTMLAudioElement | null>(null);
-
-  useEffect(() => {
-    // Shuffle playlist on start
-    shuffledRef.current = [...playlist].sort(() => Math.random() - 0.5);
-
-    const audio = new Audio(shuffledRef.current[0]);
-    audio.volume = 0.5;
-    audioRef.current = audio;
-
-    const playNext = () => {
-      currentIndexRef.current = (currentIndexRef.current + 1) % shuffledRef.current.length;
-      audio.src = shuffledRef.current[currentIndexRef.current];
-      audio.play().catch(err => console.log("Next track play blocked", err));
-    };
-
-    audio.addEventListener('ended', playNext);
-
-    const playAudio = () => {
-      if (screen !== 'menu') {
-        audio.play().catch(err => console.log("Autoplay blocked, waiting for interaction", err));
-      }
-      ['click', 'mousedown', 'keydown', 'touchstart'].forEach(event => {
-        window.removeEventListener(event, playAudio);
-      });
-    };
-
-    ['click', 'mousedown', 'keydown', 'touchstart'].forEach(event => {
-      window.addEventListener(event, playAudio);
-    });
-
-    return () => {
-      audio.pause();
-      audio.removeEventListener('ended', playNext);
-      ['click', 'mousedown', 'keydown', 'touchstart'].forEach(event => {
-        window.removeEventListener(event, playAudio);
-      });
-    };
-  }, [playlist]);
-
-  useEffect(() => {
-    if (audioRef.current) {
-      if (screen === 'menu') {
-        audioRef.current.pause();
-      } else {
-        audioRef.current.play().catch(err => console.log("Autoplay blocked", err));
-      }
-    }
-  }, [screen]);
+  useBGM(screen !== 'menu');
 
   // Mobile Detection
   const { setIsMobile } = useGameStore();

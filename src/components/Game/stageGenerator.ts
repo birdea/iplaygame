@@ -1,21 +1,16 @@
-import type { Entity, Block, Monster } from '../../types';
+import type { Entity, Block } from '../../types';
 import { UNIT_SIZE, getStageLength, getBossTriggerX } from '../../constants';
+import { GAME_STRATEGY } from '../../config/GameStrategy';
+import {
+    resetIds,
+    createGroundBlock,
+    createPlatformBlock,
+    createBossPlatformBlock,
+    createMonster,
+} from './entityFactories';
 
-let nextId = 0;
-
-function getUniqueId(prefix: string): string {
-    return `${prefix}-${nextId++}`;
-}
-
-/** Reset the ID counter (call at the start of each stage generation) */
-export function resetIds(): void {
-    nextId = 0;
-}
-
-import { GAME_STRATEGY } from './GameStrategy';
-
-const { GROUND_Y } = GAME_STRATEGY.PHYSICS;
-const { STAGE, MONSTERS } = GAME_STRATEGY;
+const { STAGE, MONSTERS, PHYSICS } = GAME_STRATEGY;
+const { GROUND_Y } = PHYSICS;
 
 /** Generate all ground blocks with random holes */
 function generateGround(stage: number): Block[] {
@@ -32,15 +27,7 @@ function generateGround(stage: number): Block[] {
             continue;
         }
 
-        blocks.push({
-            id: getUniqueId('ground'),
-            pos: { x, y: GROUND_Y },
-            vel: { x: 0, y: 0 },
-            width: UNIT_SIZE,
-            height: UNIT_SIZE,
-            type: 'block',
-            blockType: 'ground',
-        } as Block);
+        blocks.push(createGroundBlock(x));
         x += UNIT_SIZE;
     }
 
@@ -79,18 +66,8 @@ function generatePlatforms(stage: number): Block[] {
 
             for (let i = 0; i < platformLen; i++) {
                 const bx = x + i * UNIT_SIZE;
-                // Randomly place question blocks
                 const blockType: 'brick' | 'question' = Math.random() < STAGE.QUESTION_BLOCK_CHANCE ? 'question' : 'brick';
-
-                platforms.push({
-                    id: getUniqueId(`platform-${floorIdx}`),
-                    pos: { x: bx, y: floorY },
-                    vel: { x: 0, y: 0 },
-                    width: UNIT_SIZE,
-                    height: UNIT_SIZE,
-                    type: 'block',
-                    blockType,
-                } as Block);
+                platforms.push(createPlatformBlock(bx, floorY, floorIdx, blockType));
             }
 
             x += (platformLen + gap) * UNIT_SIZE;
@@ -119,54 +96,6 @@ function generateObstacles(stage: number): Entity[] {
     return entities;
 }
 
-export function createMonster(x: number, baseSpeed: number): Monster {
-    const rand = Math.random();
-    let mType: 'skinny' | 'fat' | 'fly' = 'skinny';
-    let mWidth = UNIT_SIZE;
-    let mHeight = UNIT_SIZE;
-    let mVelX = -baseSpeed;
-    let mPosY = 450;
-    let mHP = MONSTERS.TYPES.SKINNY.HP;
-
-    const { SKINNY, FAT, FLY } = MONSTERS.TYPES;
-
-    if (rand < SKINNY.SPAWN_WEIGHT) {
-        mType = 'skinny';
-        mWidth = UNIT_SIZE * SKINNY.WIDTH_RATIO;
-        mHeight = UNIT_SIZE * SKINNY.HEIGHT_RATIO;
-        mVelX = -baseSpeed * SKINNY.SPEED_MULT;
-        mPosY = GROUND_Y - mHeight;
-        mHP = SKINNY.HP;
-    } else if (rand < SKINNY.SPAWN_WEIGHT + FAT.SPAWN_WEIGHT) {
-        mType = 'fat';
-        mWidth = UNIT_SIZE * FAT.WIDTH_RATIO;
-        mHeight = UNIT_SIZE * FAT.HEIGHT_RATIO;
-        mVelX = -baseSpeed * FAT.SPEED_MULT;
-        mPosY = GROUND_Y - mHeight;
-        mHP = FAT.HP;
-    } else {
-        mType = 'fly';
-        mWidth = UNIT_SIZE * FLY.WIDTH_RATIO;
-        mHeight = UNIT_SIZE * FLY.HEIGHT_RATIO;
-        mVelX = -baseSpeed * FLY.SPEED_MULT;
-        mPosY = 200 + Math.random() * 150;
-        mHP = FLY.HP;
-    }
-
-    return {
-        id: getUniqueId('monster'),
-        pos: { x, y: mPosY },
-        vel: { x: mVelX, y: 0 },
-        width: mWidth,
-        height: mHeight,
-        type: 'monster',
-        monsterType: mType,
-        hp: mHP,
-        direction: -1,
-    } as Monster;
-}
-
-
 /** Generate all entities for a stage. Returns the full entity array. */
 export function generateStage(stage: number): Entity[] {
     resetIds();
@@ -189,15 +118,9 @@ export function spawnBossPlatform(entities: Entity[], cameraX: number, floorCoun
         if (entities.some(e => e.type === 'block' && Math.abs(e.pos.x - bx) < 10 && Math.abs(e.pos.y - floorY) < 10)) continue;
 
         const blockType: 'brick' | 'question' = Math.random() < STAGE.QUESTION_BLOCK_CHANCE ? 'question' : 'brick';
-
-        entities.push({
-            id: getUniqueId(`boss-platform-${Date.now()}-${i}`),
-            pos: { x: bx, y: floorY },
-            vel: { x: 0, y: 0 }, // Static tiles!
-            width: UNIT_SIZE,
-            height: UNIT_SIZE,
-            type: 'block',
-            blockType,
-        } as Block);
+        entities.push(createBossPlatformBlock(bx, floorY, i, blockType));
     }
 }
+
+// Re-export createMonster for consumers that still import from here
+export { createMonster } from './entityFactories';
